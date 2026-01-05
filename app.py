@@ -2,10 +2,10 @@ import streamlit as st
 import feedparser
 import pandas as pd
 from textblob import TextBlob
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 
-# --- CONFIGURATION (STRICT QUERY MODE) ---
+# --- CONFIGURATION ---
 TARGETS = {
     "Strait of Malacca": '"Strait of Malacca" OR "Singapore Strait" OR "Malacca Strait"',
     "Taiwan Strait": '"Taiwan Strait" OR "PLA navy" OR "TSMC" OR "Taiwan defense"',
@@ -15,21 +15,12 @@ TARGETS = {
     "Semiconductor Supply": '"TSMC" OR "Nvidia" OR "Foxconn" OR "semiconductor supply chain"'
 }
 
-# --- NOISE FILTER ---
 EXCLUDED_TERMS = [
     "Ukraine", "Russia", "Kyiv", "Moscow", "Putin", "Zelensky", 
     "Gaza", "Hamas", "Israel", "Palestin", 
     "Venezuela", "Caracas", "Maduro",
     "Football", "Cricket", "Movie", "Celeb"
 ]
-
-TIME_FILTERS = {
-    "Last 1 Hour": "1h",
-    "Last 24 Hours": "1d",
-    "Last 7 Days": "7d",
-    "Past 1 Month": "30d",
-    "Past 1 Year": "365d"
-}
 
 # --- HELPER FUNCTIONS ---
 def parse_date(date_str):
@@ -39,108 +30,125 @@ def parse_date(date_str):
     except:
         return datetime.now()
 
-def fetch_feed(query, time_param, sort_mode):
+def get_date_string(days_ago):
+    """Returns a date string YYYY-MM-DD for X days ago."""
+    d = datetime.now() - timedelta(days=days_ago)
+    return d.strftime("%Y-%m-%d")
+
+def fetch_rss_url(query, after_date=None, before_date=None, when_param=None):
     base_query = query.replace(" ", "%20")
     
-    # Construct URL with Sort Logic
-    # scoring=n (Newest) vs scoring=r (Relevance)
-    sort_code = "n" if sort_mode == "Latest News" else "r"
-    
-    final_query = f"{base_query}%20when:{time_param}"
-    
-    # We add &scoring= parameter to the URL
-    url = f"https://news.google.com/rss/search?q={final_query}&hl=en-IN&gl=IN&ceid=IN:en&scoring={sort_code}"
-    
-    return feedparser.parse(url)
+    # Logic: Use 'after/before' for precise slicing, or 'when' for simple ranges
+    if after_date and before_date:
+        final_query = f"{base_query}+after:{after_date}+before:{before_date}"
+    elif when_param:
+        final_query = f"{base_query}%20when:{when_param}"
+    else:
+        final_query = base_query
 
-# --- THE ENGINE ---
-def get_intel(target_name, time_selection, sort_mode):
+    # We use 'ceid=IN:en' for Indo-Pacific context
+    return f"https://news.google.com/rss/search?q={final_query}&hl=en-IN&gl=IN&ceid=IN:en"
+
+# --- THE DEEP DIVE ENGINE ---
+def get_intel_deep_dive(target_name, time_mode):
     query = TARGETS[target_name]
-    time_code = TIME_FILTERS[time_selection]
-    
-    feed = fetch_feed(query, time_code, sort_mode)
-    items = feed.entries
-    
+    all_feeds = []
+
+    # STRATEGY 1: SIMPLE FETCH (For short durations)
+    if time_mode in ["Last 1 Hour", "Last 24 Hours", "Last 7 Days"]:
+        map_time = {"Last 1 Hour": "1h", "Last 24 Hours": "1d", "Last 7 Days": "7d"}
+        url = fetch_rss_url(query, when_param=map_time[time_mode])
+        all_feeds.append(feedparser.parse(url))
+
+    # STRATEGY 2: TIME SLICING (For "Past 1 Month" -> Break into 3 weeks)
+    elif time_mode == "Past 1 Month (Deep Dive)":
+        # Slice 1: Day 0-7
+        url1 = fetch_rss_url(query, when_param="7d")
+        # Slice 2: Day 8-14
+        url2 = fetch_rss_url(query, after_date=get_date_string(14), before_date=get_date_string(7))
+        # Slice 3: Day 15-30
+        url3 = fetch_rss_url(query, after_date=get_date_string(30), before_date=get_date_string(14))
+        
+        # Parallel fetch simulation (sequential for simplicity)
+        all_feeds = [feedparser.parse(url1), feedparser.parse(url2), feedparser.parse(url3)]
+
+    # STRATEGY 3: HISTORICAL ARCHIVE
+    elif time_mode == "Past 1 Year":
+        # Just grab the 'Best Match' for the year
+        url = fetch_rss_url(query, when_param="365d")
+        all_feeds.append(feedparser.parse(url))
+
+    # --- PROCESS & MERGE ---
     processed_data = []
-    seen_titles = set() # For deduplication
-    
-    for entry in items: 
-        # LAYER 1: NOISE FILTER
-        title_lower = entry.title.lower()
-        if any(term.lower() in title_lower for term in EXCLUDED_TERMS):
-            continue 
+    seen_titles = set()
 
-        # LAYER 2: DEDUPLICATION
-        # Remove exact duplicate titles to save space
-        if title_lower in seen_titles:
-            continue
-        seen_titles.add(title_lower)
-
-        pub_date_obj = parse_date(entry.published)
-        pub_date_str = pub_date_obj.strftime("%Y-%m-%d")
-        
-        text_to_analyze = f"{entry.title} {entry.get('summary', '')}"
-        blob = TextBlob(text_to_analyze)
-        sentiment = blob.sentiment.polarity
-        
-        risk_score = "LOW"
-        if sentiment < -0.05: risk_score = "MEDIUM"
-        if sentiment < -0.2: risk_score = "HIGH"
-        
-        critical_words = ["attack", "missile", "sinking", "blocked", "collision", "suspended", "ban", "sanction", "drone"]
-        if any(w in entry.title.lower() for w in critical_words):
-            risk_score = "CRITICAL"
+    for feed in all_feeds:
+        for entry in feed.entries:
+            # Noise Filter
+            if any(term.lower() in entry.title.lower() for term in EXCLUDED_TERMS):
+                continue
             
-        processed_data.append({
-            "Title": entry.title,
-            "Link": entry.link,
-            "Date": pub_date_str,
-            "Risk": risk_score,
-            "Sentiment": round(sentiment, 2),
-            "Source": entry.source.get('title', 'Google News')
-        })
-    
+            # Deduplication
+            if entry.title.lower() in seen_titles:
+                continue
+            seen_titles.add(entry.title.lower())
+
+            pub_date_obj = parse_date(entry.published)
+            pub_date_str = pub_date_obj.strftime("%Y-%m-%d")
+
+            # Sentiment
+            text_to_analyze = f"{entry.title} {entry.get('summary', '')}"
+            blob = TextBlob(text_to_analyze)
+            sentiment = blob.sentiment.polarity
+            
+            risk_score = "LOW"
+            if sentiment < -0.05: risk_score = "MEDIUM"
+            if sentiment < -0.2: risk_score = "HIGH"
+            
+            critical_words = ["attack", "missile", "sinking", "blocked", "collision", "suspended", "ban", "sanction", "drone"]
+            if any(w in entry.title.lower() for w in critical_words):
+                risk_score = "CRITICAL"
+
+            processed_data.append({
+                "Title": entry.title,
+                "Link": entry.link,
+                "Date": pub_date_str,
+                "Risk": risk_score,
+                "Sentiment": round(sentiment, 2),
+                "Source": entry.source.get('title', 'Google News')
+            })
+
     df = pd.DataFrame(processed_data)
-    
-    # sorting depends on user preference
     if not df.empty:
-        if sort_mode == "Latest News":
-            # Sort by Date Descending (Newest First)
-            df = df.sort_values(by=['Date'], ascending=False)
-        else:
-             # Sort by Sentiment (Risk First) for Relevance Mode
-            df = df.sort_values(by=['Sentiment'], ascending=True)
+        # Sort by Date Descending
+        df = df.sort_values(by=['Date'], ascending=False)
         
     return df
 
 # --- FRONTEND ---
-st.set_page_config(page_title="SENTINEL-NODE V9", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V10", layout="wide")
 
 if 'page_number' not in st.session_state:
     st.session_state['page_number'] = 0
 
-# --- SIDEBAR CONTROLS ---
+# Sidebar
 st.sidebar.title("⚙️ Mission Control")
-st.sidebar.header("1. Target")
-selected_target = st.sidebar.radio("Select Choke Point", list(TARGETS.keys()))
+selected_target = st.sidebar.radio("Target Vector", list(TARGETS.keys()))
 
 st.sidebar.markdown("---")
-st.sidebar.header("2. Search Parameters")
+st.sidebar.info("ℹ️ **Deep Dive Mode:** 'Past 1 Month' now performs 3 separate scans (Week 1, Week 2, Week 3-4) to force Google to reveal older data.")
 
-# Sort Mode Toggle
-sort_mode = st.sidebar.radio("Sort Logic", ["Latest News", "Best Match"], index=0, help="'Latest' shows newest first. 'Best Match' digs deeper for older, relevant stories.")
-
-st.sidebar.info(f"Mode: **{sort_mode}**\n\nUse 'Best Match' if you want to see older stories from the past month.")
-
-# --- MAIN LAYOUT ---
+# Main Layout
 col1, col2, col3 = st.columns([3, 1, 1])
 with col1:
     st.title("📡 SENTINEL-NODE: Risk Command")
     st.markdown("*Real-time Open Source Intelligence (OSINT)*")
 
 with col2:
-    st.write("### ⏳ Time Filter")
-    selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=2, key="time_select")
+    st.write("### ⏳ Time Mode")
+    # UPDATED OPTIONS
+    time_options = ["Last 24 Hours", "Last 7 Days", "Past 1 Month (Deep Dive)", "Past 1 Year"]
+    selected_time = st.selectbox("Select Window", time_options, index=1)
 
 with col3:
     st.write("### 🎚️ Threat Level")
@@ -148,11 +156,10 @@ with col3:
 
 st.markdown("---")
 
-# Initialize Button (Full Width)
-if st.button("🚀 INITIALIZE INTELLIGENCE SCAN", type="primary", use_container_width=True):
+if st.button("🚀 INITIALIZE DEEP SCAN", type="primary", use_container_width=True):
     st.session_state['page_number'] = 0 
-    with st.spinner(f"Scanning {selected_target} ({sort_mode})..."):
-        df_result = get_intel(selected_target, selected_time, sort_mode)
+    with st.spinner(f"Executing Multi-Vector Scan for {selected_target}..."):
+        df_result = get_intel_deep_dive(selected_target, selected_time)
         
         if df_result.empty:
             st.error("No intelligence found.")
@@ -161,7 +168,7 @@ if st.button("🚀 INITIALIZE INTELLIGENCE SCAN", type="primary", use_container_
             st.session_state['data'] = df_result.to_dict('records')
             st.session_state['target'] = selected_target
 
-# --- RESULTS AREA ---
+# Results
 if 'data' in st.session_state and st.session_state['data'] is not None:
     df = pd.DataFrame(st.session_state['data'])
     
@@ -170,13 +177,11 @@ if 'data' in st.session_state and st.session_state['data'] is not None:
     
     total_items = len(df)
     
-    # Metrics
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3 = st.columns(3)
     m1.metric("INTEL MATCHED", total_items)
     if not df.empty:
         m2.metric("CRITICAL THREATS", len(df[df['Risk'] == "CRITICAL"]))
-    m3.metric("WINDOW", selected_time)
-    m4.metric("SORT MODE", sort_mode)
+    m3.metric("SCAN MODE", selected_time)
     
     st.markdown(f"### 🛑 Threat Feed")
 
@@ -246,7 +251,4 @@ if 'data' in st.session_state and st.session_state['data'] is not None:
             )
 
 else:
-    st.info("👈 Use the Sidebar to configure your scan.")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("System: Sentinel-Node V9.0 | Status: Active")
+    st.info("👈 Select a target and click 'Initialize Scan'.")
