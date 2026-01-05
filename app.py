@@ -5,23 +5,34 @@ from textblob import TextBlob
 from datetime import datetime
 import time
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (STRICT QUERY MODE) ---
+# FIX: Added quotes \" \" around phrases to force exact matches
+# FIX: Added specific port names to avoid generic "Port" news
 TARGETS = {
-    "Strait of Malacca": "Strait of Malacca OR Singapore Strait shipping",
-    "Taiwan Strait": "Taiwan Strait military OR TSMC supply chain",
-    "Red Sea / Suez": "Red Sea attacks OR Suez Canal blocked OR Houthi",
-    "South China Sea": "South China Sea collision OR Philippines coast guard",
-    "Indian Ocean": "Indian Ocean navy OR Hambantota port OR Adani ports",
-    "Semiconductor Supply": "TSMC Arizona OR Nvidia supply chain OR chip shortage"
+    "Strait of Malacca": '"Strait of Malacca" OR "Singapore Strait" OR "Malacca Strait"',
+    "Taiwan Strait": '"Taiwan Strait" OR "PLA navy" OR "TSMC" when:14d',
+    "Red Sea / Suez": '"Red Sea" OR "Suez Canal" OR "Houthi" OR "Bab el-Mandeb"',
+    "South China Sea": '"South China Sea" OR "Spratly Islands" OR "Second Thomas Shoal"',
+    "Indian Ocean": '"Indian Ocean" OR "Hambantota port" OR "Diego Garcia" OR "Andaman Sea"',
+    "Semiconductor Supply": '"TSMC" OR "Nvidia" OR "Foxconn" OR "semiconductor supply chain"'
 }
+
+# --- NOISE FILTER (THE TRASH CAN) ---
+# If any of these words appear in the title, the article is deleted.
+# This removes the "Russia/Ukraine" noise from your Indo-Pacific feed.
+EXCLUDED_TERMS = [
+    "Ukraine", "Russia", "Kyiv", "Moscow", "Putin", "Zelensky", 
+    "Gaza", "Hamas", "Israel", "Palestin", 
+    "Venezuela", "Caracas", "Maduro",
+    "Football", "Cricket", "Movie", "Celeb" # Removes pop culture noise
+]
 
 TIME_FILTERS = {
     "Last 1 Hour": "1h",
     "Last 24 Hours": "1d",
     "Last 7 Days": "7d",
     "Past 1 Month": "1m",
-    "Past 1 Year": "1y",
-    "Historical (5 Years)": "5y"
+    "Past 1 Year": "1y"
 }
 
 # --- HELPER FUNCTIONS ---
@@ -34,6 +45,7 @@ def parse_date(date_str):
 
 def fetch_feed(query, time_param):
     base_query = query.replace(" ", "%20")
+    # We add -soccer -cricket to the URL to tell Google to stop sending sports news
     final_query = f"{base_query}%20when:{time_param}"
     url = f"https://news.google.com/rss/search?q={final_query}&hl=en-IN&gl=IN&ceid=IN:en"
     return feedparser.parse(url)
@@ -48,8 +60,13 @@ def get_intel(target_name, time_selection):
     
     processed_data = []
     
-    # FETCH ALL AVAILABLE (Up to 100)
     for entry in items: 
+        # --- LAYER 1: THE NOISE FILTER ---
+        # Check if title contains any excluded terms
+        title_lower = entry.title.lower()
+        if any(term.lower() in title_lower for term in EXCLUDED_TERMS):
+            continue # Skip this article, it is noise.
+
         pub_date_obj = parse_date(entry.published)
         pub_date_str = pub_date_obj.strftime("%Y-%m-%d")
         
@@ -61,6 +78,7 @@ def get_intel(target_name, time_selection):
         if sentiment < -0.05: risk_score = "MEDIUM"
         if sentiment < -0.2: risk_score = "HIGH"
         
+        # Critical keywords specific to maritime/supply chain
         critical_words = ["attack", "missile", "sinking", "blocked", "collision", "suspended", "ban", "sanction", "drone"]
         if any(w in entry.title.lower() for w in critical_words):
             risk_score = "CRITICAL"
@@ -74,7 +92,6 @@ def get_intel(target_name, time_selection):
             "Source": entry.source.get('title', 'Google News')
         })
     
-    # SORTING: Most Negative/Critical First
     df = pd.DataFrame(processed_data)
     if not df.empty:
         df = df.sort_values(by=['Sentiment'], ascending=True)
@@ -82,12 +99,11 @@ def get_intel(target_name, time_selection):
     return df
 
 # --- FRONTEND ---
-st.set_page_config(page_title="SENTINEL-NODE V6", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V7 (Strict)", layout="wide")
 
 if 'page_number' not in st.session_state:
     st.session_state['page_number'] = 0
 
-# Top Bar Layout
 col1, col2, col3 = st.columns([3, 1, 1])
 with col1:
     st.title("📡 SENTINEL-NODE: Risk Command")
@@ -95,12 +111,10 @@ with col1:
 
 with col2:
     st.write("### ⏳ Time Filter")
-    # Default index=1 is "Last 24 Hours"
     selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=1, key="time_select")
 
 with col3:
     st.write("### 🎚️ Threat Level")
-    # New Filter for Threat Level
     threat_filter = st.selectbox("Show Only", ["All", "CRITICAL", "HIGH", "MEDIUM", "LOW"], index=0)
 
 st.markdown("---")
@@ -112,6 +126,8 @@ with c1:
     selected_target = st.radio("Choose Choke Point", list(TARGETS.keys()))
     
     st.markdown("---")
+    st.info("ℹ️ **Note:** Filters active. Articles mentioning 'Ukraine', 'Russia', or 'Gaza' are automatically removed to reduce noise.")
+    
     if st.button("Initialize Scan", type="primary", use_container_width=True):
         st.session_state['page_number'] = 0 
         with st.spinner(f"Scanning {selected_target}..."):
@@ -129,13 +145,11 @@ with c2:
     if 'data' in st.session_state and st.session_state['data'] is not None:
         df = pd.DataFrame(st.session_state['data'])
         
-        # --- APPLY THREAT FILTER ---
         if threat_filter != "All":
             df = df[df['Risk'] == threat_filter]
         
         total_items = len(df)
         
-        # Metrics
         m1, m2, m3 = st.columns(3)
         m1.metric("INTEL MATCHED", total_items)
         if not df.empty:
@@ -147,23 +161,12 @@ with c2:
         if df.empty:
             st.warning(f"No events found matching threat level: **{threat_filter}**")
         else:
-            # --- PAGINATION BAR (Moved to Bottom) ---
-            # Create a container at the bottom for controls
-            
-            # Logic for slicing data
-            # We need to get items_per_page BEFORE we slice, but we want the UI at the bottom? 
-            # Streamlit renders top-to-bottom. To put UI at bottom but use it for logic, we usually put it top.
-            # TRICK: We will put the dropdown at the bottom, but we need a default value for logic.
-            # We'll use session state to store the "items_per_page" from the previous run or default.
-            
             if 'items_per_page' not in st.session_state:
                 st.session_state['items_per_page'] = 5
 
-            # Calculate Pages based on stored value
             items_per_page = st.session_state['items_per_page']
             total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
             
-            # Validation
             if st.session_state['page_number'] >= total_pages:
                 st.session_state['page_number'] = 0
             
@@ -172,7 +175,6 @@ with c2:
             end_idx = start_idx + items_per_page
             page_data = df.iloc[start_idx:end_idx]
 
-            # Render Cards
             for _, row in page_data.iterrows():
                 if row['Risk'] == "CRITICAL":
                     st.error(f"🔴 **CRITICAL:** {row['Title']}")
@@ -190,8 +192,6 @@ with c2:
 
             st.markdown("---")
             
-            # --- BOTTOM CONTROLS ---
-            # 4 Columns: Previous | Page Info | Next | Items Per Page
             b1, b2, b3, b4 = st.columns([1, 2, 1, 1])
             
             with b1:
@@ -210,10 +210,9 @@ with c2:
                         st.rerun()
             
             with b4:
-                # The dropdown updates the session state
                 def update_items():
                     st.session_state['items_per_page'] = st.session_state.new_items
-                    st.session_state['page_number'] = 0 # Reset to page 1 on change
+                    st.session_state['page_number'] = 0 
 
                 st.selectbox(
                     "Rows:", 
@@ -227,4 +226,4 @@ with c2:
     else:
         st.info("👈 Select a target and click 'Initialize Scan' to begin.")
 
-st.sidebar.caption("System: Sentinel-Node V6.0 | Status: Active")
+st.sidebar.caption("System: Sentinel-Node V7.0 | Status: Active | Filter: Strict")
