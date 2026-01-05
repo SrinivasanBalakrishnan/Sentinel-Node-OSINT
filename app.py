@@ -48,7 +48,7 @@ def get_intel(target_name, time_selection):
     
     processed_data = []
     
-    # FETCH ALL AVAILABLE (Up to 100 is standard RSS limit)
+    # FETCH ALL AVAILABLE (Up to 100)
     for entry in items: 
         pub_date_obj = parse_date(entry.published)
         pub_date_str = pub_date_obj.strftime("%Y-%m-%d")
@@ -74,8 +74,7 @@ def get_intel(target_name, time_selection):
             "Source": entry.source.get('title', 'Google News')
         })
     
-    # SORTING LOGIC: Sort by Sentiment (Ascending) -> Most Negative/Critical First
-    # If sentiments are equal, sort by Date (Newest First)
+    # SORTING: Most Negative/Critical First
     df = pd.DataFrame(processed_data)
     if not df.empty:
         df = df.sort_values(by=['Sentiment'], ascending=True)
@@ -83,19 +82,26 @@ def get_intel(target_name, time_selection):
     return df
 
 # --- FRONTEND ---
-st.set_page_config(page_title="SENTINEL-NODE V5", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V6", layout="wide")
 
-# Initialize Session State for Pagination
 if 'page_number' not in st.session_state:
     st.session_state['page_number'] = 0
 
-col1, col2 = st.columns([3, 1])
+# Top Bar Layout
+col1, col2, col3 = st.columns([3, 1, 1])
 with col1:
     st.title("📡 SENTINEL-NODE: Risk Command")
     st.markdown("*Real-time Open Source Intelligence (OSINT)*")
+
 with col2:
     st.write("### ⏳ Time Filter")
-    selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=2)
+    # Default index=1 is "Last 24 Hours"
+    selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=1, key="time_select")
+
+with col3:
+    st.write("### 🎚️ Threat Level")
+    # New Filter for Threat Level
+    threat_filter = st.selectbox("Show Only", ["All", "CRITICAL", "HIGH", "MEDIUM", "LOW"], index=0)
 
 st.markdown("---")
 
@@ -107,7 +113,7 @@ with c1:
     
     st.markdown("---")
     if st.button("Initialize Scan", type="primary", use_container_width=True):
-        st.session_state['page_number'] = 0 # Reset to page 1 on new search
+        st.session_state['page_number'] = 0 
         with st.spinner(f"Scanning {selected_target}..."):
             df_result = get_intel(selected_target, selected_time)
             
@@ -123,75 +129,102 @@ with c2:
     if 'data' in st.session_state and st.session_state['data'] is not None:
         df = pd.DataFrame(st.session_state['data'])
         
-        # --- PAGINATION CONTROLS (Bottom Logic moved here for flow) ---
+        # --- APPLY THREAT FILTER ---
+        if threat_filter != "All":
+            df = df[df['Risk'] == threat_filter]
+        
         total_items = len(df)
         
-        # Metrics Row
+        # Metrics
         m1, m2, m3 = st.columns(3)
-        m1.metric("TOTAL INTEL FOUND", total_items)
-        m2.metric("CRITICAL THREATS", len(df[df['Risk'] == "CRITICAL"]))
+        m1.metric("INTEL MATCHED", total_items)
+        if not df.empty:
+            m2.metric("CRITICAL THREATS", len(df[df['Risk'] == "CRITICAL"]))
         m3.metric("SOURCE WINDOW", selected_time)
         
-        st.markdown("### 🛑 Threat Feed (Sorted by Severity)")
+        st.markdown(f"### 🛑 Threat Feed: {threat_filter} Events")
 
-        # Pagination Dropdown
-        items_per_page = st.selectbox(
-            "Articles per page:", 
-            options=[5, 10, 25, 50, 100], 
-            index=0
-        )
-        
-        # Calculate Pages
-        total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
-        current_page = st.session_state['page_number']
-        
-        # Ensure we don't go out of bounds
-        if current_page >= total_pages:
-            current_page = total_pages - 1
-            st.session_state['page_number'] = current_page
+        if df.empty:
+            st.warning(f"No events found matching threat level: **{threat_filter}**")
+        else:
+            # --- PAGINATION BAR (Moved to Bottom) ---
+            # Create a container at the bottom for controls
+            
+            # Logic for slicing data
+            # We need to get items_per_page BEFORE we slice, but we want the UI at the bottom? 
+            # Streamlit renders top-to-bottom. To put UI at bottom but use it for logic, we usually put it top.
+            # TRICK: We will put the dropdown at the bottom, but we need a default value for logic.
+            # We'll use session state to store the "items_per_page" from the previous run or default.
+            
+            if 'items_per_page' not in st.session_state:
+                st.session_state['items_per_page'] = 5
 
-        # Slice Data
-        start_idx = current_page * items_per_page
-        end_idx = start_idx + items_per_page
-        page_data = df.iloc[start_idx:end_idx]
+            # Calculate Pages based on stored value
+            items_per_page = st.session_state['items_per_page']
+            total_pages = max(1, (total_items // items_per_page) + (1 if total_items % items_per_page > 0 else 0))
+            
+            # Validation
+            if st.session_state['page_number'] >= total_pages:
+                st.session_state['page_number'] = 0
+            
+            current_page = st.session_state['page_number']
+            start_idx = current_page * items_per_page
+            end_idx = start_idx + items_per_page
+            page_data = df.iloc[start_idx:end_idx]
 
-        # Display Cards
-        for _, row in page_data.iterrows():
-            if row['Risk'] == "CRITICAL":
-                st.error(f"🔴 **CRITICAL:** {row['Title']}")
-            elif row['Risk'] == "HIGH":
-                st.warning(f"🟠 **HIGH:** {row['Title']}")
-            elif row['Risk'] == "MEDIUM":
-                st.warning(f"🟡 **MEDIUM:** {row['Title']}")
-            else:
-                st.success(f"🟢 **STABLE:** {row['Title']}")
-                
-            with st.expander("Intelligence Details"):
-                st.write(f"**Date:** {row['Date']} | **Source:** {row['Source']}")
-                st.write(f"**AI Risk Score:** {row['Sentiment']} (Lower is worse)")
-                st.markdown(f"[Read Article]({row['Link']})")
+            # Render Cards
+            for _, row in page_data.iterrows():
+                if row['Risk'] == "CRITICAL":
+                    st.error(f"🔴 **CRITICAL:** {row['Title']}")
+                elif row['Risk'] == "HIGH":
+                    st.warning(f"🟠 **HIGH:** {row['Title']}")
+                elif row['Risk'] == "MEDIUM":
+                    st.warning(f"🟡 **MEDIUM:** {row['Title']}")
+                else:
+                    st.success(f"🟢 **STABLE:** {row['Title']}")
+                    
+                with st.expander("Intelligence Details"):
+                    st.write(f"**Date:** {row['Date']} | **Source:** {row['Source']}")
+                    st.write(f"**AI Risk Score:** {row['Sentiment']}")
+                    st.markdown(f"[Read Article]({row['Link']})")
 
-        st.markdown("---")
-        
-        # Navigation Buttons
-        col_prev, col_info, col_next = st.columns([1, 2, 1])
-        
-        with col_prev:
-            if st.button("⬅️ Previous"):
-                if st.session_state['page_number'] > 0:
-                    st.session_state['page_number'] -= 1
-                    st.rerun()
-        
-        with col_info:
-            st.markdown(f"<div style='text-align: center'>Page <b>{current_page + 1}</b> of <b>{total_pages}</b></div>", unsafe_allow_html=True)
-        
-        with col_next:
-            if st.button("Next ➡️"):
-                if st.session_state['page_number'] < total_pages - 1:
-                    st.session_state['page_number'] += 1
-                    st.rerun()
+            st.markdown("---")
+            
+            # --- BOTTOM CONTROLS ---
+            # 4 Columns: Previous | Page Info | Next | Items Per Page
+            b1, b2, b3, b4 = st.columns([1, 2, 1, 1])
+            
+            with b1:
+                if st.button("⬅️ Previous"):
+                    if st.session_state['page_number'] > 0:
+                        st.session_state['page_number'] -= 1
+                        st.rerun()
+            
+            with b2:
+                st.markdown(f"<div style='text-align: center; padding-top: 10px;'>Page <b>{current_page + 1}</b> of <b>{total_pages}</b></div>", unsafe_allow_html=True)
+            
+            with b3:
+                if st.button("Next ➡️"):
+                    if st.session_state['page_number'] < total_pages - 1:
+                        st.session_state['page_number'] += 1
+                        st.rerun()
+            
+            with b4:
+                # The dropdown updates the session state
+                def update_items():
+                    st.session_state['items_per_page'] = st.session_state.new_items
+                    st.session_state['page_number'] = 0 # Reset to page 1 on change
+
+                st.selectbox(
+                    "Rows:", 
+                    options=[5, 10, 25, 50], 
+                    index=0,
+                    key="new_items",
+                    on_change=update_items,
+                    label_visibility="collapsed"
+                )
 
     else:
         st.info("👈 Select a target and click 'Initialize Scan' to begin.")
 
-st.sidebar.caption("System: Sentinel-Node V5.0 | Status: Active")
+st.sidebar.caption("System: Sentinel-Node V6.0 | Status: Active")
