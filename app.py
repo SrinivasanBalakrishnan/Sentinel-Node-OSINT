@@ -6,33 +6,30 @@ from datetime import datetime
 import time
 
 # --- CONFIGURATION (STRICT QUERY MODE) ---
-# FIX: Added quotes \" \" around phrases to force exact matches
-# FIX: Added specific port names to avoid generic "Port" news
 TARGETS = {
     "Strait of Malacca": '"Strait of Malacca" OR "Singapore Strait" OR "Malacca Strait"',
-    "Taiwan Strait": '"Taiwan Strait" OR "PLA navy" OR "TSMC" when:14d',
+    "Taiwan Strait": '"Taiwan Strait" OR "PLA navy" OR "TSMC" OR "Taiwan defense"',
     "Red Sea / Suez": '"Red Sea" OR "Suez Canal" OR "Houthi" OR "Bab el-Mandeb"',
     "South China Sea": '"South China Sea" OR "Spratly Islands" OR "Second Thomas Shoal"',
     "Indian Ocean": '"Indian Ocean" OR "Hambantota port" OR "Diego Garcia" OR "Andaman Sea"',
     "Semiconductor Supply": '"TSMC" OR "Nvidia" OR "Foxconn" OR "semiconductor supply chain"'
 }
 
-# --- NOISE FILTER (THE TRASH CAN) ---
-# If any of these words appear in the title, the article is deleted.
-# This removes the "Russia/Ukraine" noise from your Indo-Pacific feed.
+# --- NOISE FILTER ---
 EXCLUDED_TERMS = [
     "Ukraine", "Russia", "Kyiv", "Moscow", "Putin", "Zelensky", 
     "Gaza", "Hamas", "Israel", "Palestin", 
     "Venezuela", "Caracas", "Maduro",
-    "Football", "Cricket", "Movie", "Celeb" # Removes pop culture noise
+    "Football", "Cricket", "Movie", "Celeb"
 ]
 
+# --- FIX: GOOGLE RSS ONLY ACCEPTS DAYS (d) AND HOURS (h) ---
 TIME_FILTERS = {
     "Last 1 Hour": "1h",
     "Last 24 Hours": "1d",
     "Last 7 Days": "7d",
-    "Past 1 Month": "1m",
-    "Past 1 Year": "1y"
+    "Past 1 Month": "30d",   # Fixed: Changed 1m to 30d
+    "Past 1 Year": "365d"    # Fixed: Changed 1y to 365d
 }
 
 # --- HELPER FUNCTIONS ---
@@ -45,7 +42,7 @@ def parse_date(date_str):
 
 def fetch_feed(query, time_param):
     base_query = query.replace(" ", "%20")
-    # We add -soccer -cricket to the URL to tell Google to stop sending sports news
+    # We add quotes to time param to ensure stability
     final_query = f"{base_query}%20when:{time_param}"
     url = f"https://news.google.com/rss/search?q={final_query}&hl=en-IN&gl=IN&ceid=IN:en"
     return feedparser.parse(url)
@@ -61,11 +58,10 @@ def get_intel(target_name, time_selection):
     processed_data = []
     
     for entry in items: 
-        # --- LAYER 1: THE NOISE FILTER ---
-        # Check if title contains any excluded terms
+        # LAYER 1: NOISE FILTER
         title_lower = entry.title.lower()
         if any(term.lower() in title_lower for term in EXCLUDED_TERMS):
-            continue # Skip this article, it is noise.
+            continue 
 
         pub_date_obj = parse_date(entry.published)
         pub_date_str = pub_date_obj.strftime("%Y-%m-%d")
@@ -78,7 +74,6 @@ def get_intel(target_name, time_selection):
         if sentiment < -0.05: risk_score = "MEDIUM"
         if sentiment < -0.2: risk_score = "HIGH"
         
-        # Critical keywords specific to maritime/supply chain
         critical_words = ["attack", "missile", "sinking", "blocked", "collision", "suspended", "ban", "sanction", "drone"]
         if any(w in entry.title.lower() for w in critical_words):
             risk_score = "CRITICAL"
@@ -99,7 +94,7 @@ def get_intel(target_name, time_selection):
     return df
 
 # --- FRONTEND ---
-st.set_page_config(page_title="SENTINEL-NODE V7 (Strict)", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V8 (Stable)", layout="wide")
 
 if 'page_number' not in st.session_state:
     st.session_state['page_number'] = 0
@@ -111,7 +106,7 @@ with col1:
 
 with col2:
     st.write("### ⏳ Time Filter")
-    selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=1, key="time_select")
+    selected_time = st.selectbox("Select Window", list(TIME_FILTERS.keys()), index=2, key="time_select")
 
 with col3:
     st.write("### 🎚️ Threat Level")
@@ -126,7 +121,7 @@ with c1:
     selected_target = st.radio("Choose Choke Point", list(TARGETS.keys()))
     
     st.markdown("---")
-    st.info("ℹ️ **Note:** Filters active. Articles mentioning 'Ukraine', 'Russia', or 'Gaza' are automatically removed to reduce noise.")
+    st.info("ℹ️ **Note:** Filters active. Articles mentioning 'Ukraine', 'Russia', or 'Gaza' are automatically removed.")
     
     if st.button("Initialize Scan", type="primary", use_container_width=True):
         st.session_state['page_number'] = 0 
@@ -226,4 +221,4 @@ with c2:
     else:
         st.info("👈 Select a target and click 'Initialize Scan' to begin.")
 
-st.sidebar.caption("System: Sentinel-Node V7.0 | Status: Active | Filter: Strict")
+st.sidebar.caption("System: Sentinel-Node V8.0 | Status: Stable")
