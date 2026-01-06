@@ -11,26 +11,28 @@ import random
 import time
 import re
 
-# --- CONFIGURATION: SUPPLY CHAIN GRAPH ---
-# This maps assets to their downstream dependencies.
-# If the Key has a risk, the Values (Children) get a "Warning".
-SUPPLY_CHAIN_MAP = {
-    "Taiwan Strait": ["TSMC (Taiwan)", "Foxconn (China)", "Apple (USA)", "Nvidia (USA)"],
-    "Strait of Malacca": ["Port of Singapore", "Tesla Giga Shanghai", "Toyota (Japan)", "Rotterdam Hub"],
-    "Red Sea Corridor": ["Maersk Line", "Hapag-Lloyd", "Volkswagen (EU)", "IKEA Global"],
-    "Gulf of Mexico Energy": ["Pemex", "ExxonMobil Refineries", "US Plastics Industry"],
+# --- CONFIGURATION: MOCK ERP DATABASE (Stage 3) ---
+# Simulates an SAP/Oracle connection mapping regions to internal inventory.
+ERP_DATA = {
+    "Taiwan Strait": {"Part": "Microcontrollers (MCU-32)", "Inventory": "14 Days", "Status": "CRITICAL", "Daily_Burn": "$2.4M"},
+    "Strait of Malacca": {"Part": "Raw Rubber / Latex", "Inventory": "45 Days", "Status": "Healthy", "Daily_Burn": "$500k"},
+    "Red Sea Corridor": {"Part": "Finished Furniture (SKU-99)", "Inventory": "22 Days", "Status": "Warning", "Daily_Burn": "$1.1M"},
+    "Gulf of Mexico Energy": {"Part": "Petrochemical Feedstock", "Inventory": "8 Days", "Status": "CRITICAL", "Daily_Burn": "$4.5M"}
 }
 
-# --- ASSET DATABASE WITH PREDICTIVE METADATA ---
+# --- SUPPLIER WATCHLIST (Stage 3) ---
+# Clients upload their specific vendors here.
+CLIENT_SUPPLIERS = ["TSMC", "Foxconn", "Maersk", "Samsung Electronics", "Toyota Group"]
+
+# --- ASSETS & PATTERNS ---
 GEO_ASSETS = {
-    "Panama Canal": {"coords": [9.101, -79.695], "query": '"Panama Canal" OR "Gatun Lake"', "region": "Americas", "type": "Choke Point"},
-    "Gulf of Mexico Energy": {"coords": [25.000, -90.000], "query": '"Gulf of Mexico oil" OR "Pemex platform"', "region": "Americas", "type": "Energy Asset"},
-    "Red Sea Corridor": {"coords": [20.000, 38.000], "query": '"Red Sea" OR "Suez Canal" OR "Houthi"', "region": "MENA", "type": "Trade Route"},
-    "Strait of Hormuz": {"coords": [26.566, 56.416], "query": '"Strait of Hormuz" OR "Iranian navy"', "region": "MENA", "type": "Choke Point"},
-    "Strait of Malacca": {"coords": [4.000, 100.000], "query": '"Strait of Malacca" OR "Singapore Strait"', "region": "Indo-Pacific", "type": "Choke Point"},
-    "Taiwan Strait": {"coords": [24.000, 119.000], "query": '"Taiwan Strait" OR "PLA navy" OR "TSMC"', "region": "Indo-Pacific", "type": "Conflict Zone"},
-    "South China Sea": {"coords": [12.000, 113.000], "query": '"South China Sea" OR "Spratly Islands"', "region": "Indo-Pacific", "type": "Conflict Zone"},
-    "Rotterdam Port": {"coords": [51.922, 4.477], "query": '"Port of Rotterdam" OR "Maasvlakte"', "region": "Europe", "type": "Port Terminal"}
+    "Panama Canal": {"coords": [9.101, -79.695], "query": '"Panama Canal" OR "Gatun Lake"', "region": "Americas", "type": "Choke Point", "Trade_Vol": "$270M/day"},
+    "Gulf of Mexico Energy": {"coords": [25.000, -90.000], "query": '"Gulf of Mexico oil" OR "Pemex platform"', "region": "Americas", "type": "Energy Asset", "Trade_Vol": "$1.2B/day"},
+    "Red Sea Corridor": {"coords": [20.000, 38.000], "query": '"Red Sea" OR "Suez Canal" OR "Houthi"', "region": "MENA", "type": "Trade Route", "Trade_Vol": "$900M/day"},
+    "Strait of Hormuz": {"coords": [26.566, 56.416], "query": '"Strait of Hormuz" OR "Iranian navy"', "region": "MENA", "type": "Choke Point", "Trade_Vol": "$2.1B/day"},
+    "Strait of Malacca": {"coords": [4.000, 100.000], "query": '"Strait of Malacca" OR "Singapore Strait"', "region": "Indo-Pacific", "type": "Choke Point", "Trade_Vol": "$3.5B/day"},
+    "Taiwan Strait": {"coords": [24.000, 119.000], "query": '"Taiwan Strait" OR "PLA navy" OR "TSMC"', "region": "Indo-Pacific", "type": "Conflict Zone", "Trade_Vol": "$1.8B/day"},
+    "South China Sea": {"coords": [12.000, 113.000], "query": '"South China Sea" OR "Spratly Islands"', "region": "Indo-Pacific", "type": "Conflict Zone", "Trade_Vol": "$3.0B/day"},
 }
 
 EVENT_PATTERNS = {
@@ -40,250 +42,208 @@ EVENT_PATTERNS = {
     "Natural Disaster": [r"cyclone", r"typhoon", r"earthquake", r"tsunami", r"flood"]
 }
 
-# --- ENGINE 1: INTELLIGENCE & PREDICTION ---
-class PredictiveEngine:
-    def __init__(self):
-        self.headers = {'User-Agent': 'SentinelNode-Predictor'}
-
+# --- ENGINE: CORE INTELLIGENCE ---
+class SentinelEngine:
     def fetch_feed(self, url):
         try: return feedparser.parse(url)
         except: return None
-
-    def calculate_risk_velocity(self, current_risk_score):
-        """
-        Simulates historical comparison. 
-        In production, this queries a database of yesterday's scores.
-        """
-        # Mocking 'Yesterday's Score' for demo purposes
-        yesterday_score = current_risk_score * random.uniform(0.8, 1.2)
-        velocity = ((current_risk_score - yesterday_score) / yesterday_score) * 100
-        return velocity
-
-    def predict_delay_prob(self, risk_velocity, category):
-        """Predicts probability of shipping delays based on risk trend."""
-        base_prob = 10
-        if risk_velocity > 0: base_prob += 20
-        if risk_velocity > 20: base_prob += 40
-        if category == "Supply Chain Delay": base_prob += 20
-        return min(base_prob, 95)
 
     def scan_target(self, query):
         base = query.replace(" ", "%20")
         url = f"https://news.google.com/rss/search?q={base}%20when:7d&hl=en-IN&gl=IN&ceid=IN:en"
         feed = self.fetch_feed(url)
         results = []
-        
-        total_risk_accum = 0
-
         if feed and feed.entries:
-            for entry in feed.entries[:10]:
+            for entry in feed.entries[:8]: # Fast scan
                 text = f"{entry.title} {entry.get('summary', '')}"
                 blob = TextBlob(text)
-                
-                # Logic
                 category = "General Risk"
                 for cat, pats in EVENT_PATTERNS.items():
                     if any(re.search(p, text.lower()) for p in pats):
                         category = cat; break
                 
-                risk_val = 1 # Low
-                if blob.sentiment.polarity < -0.05: risk_val = 2 # Med
-                if blob.sentiment.polarity < -0.2: risk_val = 3 # High
-                if category == "Military Conflict" and risk_val >= 2: risk_val = 4 # Crit
-
-                total_risk_accum += risk_val
+                risk_val = 1
+                if blob.sentiment.polarity < -0.05: risk_val = 2
+                if blob.sentiment.polarity < -0.2: risk_val = 3
+                if category == "Military Conflict" and risk_val >= 2: risk_val = 4
                 
-                risk_label = ["LOW", "MEDIUM", "HIGH", "CRITICAL"][risk_val-1]
-
                 results.append({
                     "Title": entry.title,
                     "Link": entry.link,
-                    "Date": entry.published if hasattr(entry, 'published') else "Recent",
-                    "Risk": risk_label,
-                    "RiskVal": risk_val,
+                    "Risk": ["LOW", "MEDIUM", "HIGH", "CRITICAL"][risk_val-1],
                     "Category": category,
                     "Source": entry.source.get('title', 'Unknown')
                 })
-        
-        # Calculate Prediction Metrics
-        avg_risk = total_risk_accum / len(results) if results else 1
-        velocity = self.calculate_risk_velocity(avg_risk)
-        delay_prob = self.predict_delay_prob(velocity, results[0]['Category'] if results else "None")
+        return results
 
-        return results, velocity, delay_prob
-
-# --- ENGINE 2: AIS TRAFFIC SIMULATOR ---
-def generate_ais_traffic(center_coords, traffic_density="Normal"):
+# --- MODULE: DIGITAL TWIN SIMULATOR ---
+def run_simulation(target, duration_days):
     """
-    Simulates real-time AIS vessel data points around a choke point.
-    Real API costs $50k/yr. This simulates the visualization value.
+    Simulates revenue impact based on duration of closure.
     """
-    ships = []
-    num_ships = 10 if traffic_density == "Normal" else 5
+    asset_data = GEO_ASSETS[target]
+    daily_vol_str = asset_data.get("Trade_Vol", "$0")
     
-    for _ in range(num_ships):
-        # Random scatter around the center
-        lat = center_coords[0] + random.uniform(-0.5, 0.5)
-        lon = center_coords[1] + random.uniform(-0.5, 0.5)
+    # Parse "$1.2B" to float
+    multiplier = 1000000 if 'M' in daily_vol_str else 1000000000
+    daily_val = float(re.findall(r"[\d\.]+", daily_vol_str)[0]) * multiplier
+    
+    total_impact = daily_val * duration_days * 0.4 # Assuming 40% value at risk
+    
+    # Check ERP status
+    erp_status = ERP_DATA.get(target, {"Part": "Generic Cargo", "Inventory": "Unknown", "Status": "Unknown"})
+    
+    return total_impact, erp_status
+
+# --- MODULE: SUPPLIER AUDITOR ---
+def audit_suppliers(supplier_list):
+    """
+    Scans specifically for supplier names in the risk database.
+    """
+    engine = SentinelEngine()
+    audit_results = []
+    
+    for supplier in supplier_list:
+        # Mocking a directed scan for the supplier
+        res = engine.scan_target(f'"{supplier}" supply chain OR production')
         
-        ship_types = ["Container Ship", "Oil Tanker", "Bulk Carrier"]
-        status = "Underway using engine"
+        risk_score = "LOW"
+        if res:
+            # If any high risk article found, flag supplier
+            if any(r['Risk'] in ["HIGH", "CRITICAL"] for r in res):
+                risk_score = "HIGH"
+            elif any(r['Risk'] == "MEDIUM" for r in res):
+                risk_score = "MEDIUM"
         
-        # If High Risk, simulate deviations
-        if traffic_density == "Disrupted":
-            status = "Drifting / Awaiting Orders" if random.random() > 0.5 else "Rerouting"
+        audit_results.append({"Vendor": supplier, "Risk": risk_score, "Hits": len(res)})
         
-        ships.append({
-            "name": f"Vessel-{random.randint(1000,9999)}",
-            "type": random.choice(ship_types),
-            "coords": [lat, lon],
-            "status": status
-        })
-    return ships
+    return pd.DataFrame(audit_results)
 
 # --- FRONTEND UI ---
-st.set_page_config(page_title="SENTINEL-NODE V19", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V20", layout="wide")
 
-if 'active_scan' not in st.session_state: st.session_state['active_scan'] = None
-if 'alerts' not in st.session_state: st.session_state['alerts'] = []
+if 'analyst_queue' not in st.session_state: st.session_state['analyst_queue'] = []
+if 'verified_alerts' not in st.session_state: st.session_state['verified_alerts'] = []
 
-st.title("🔮 Sentinel-Node: Predictive Logistics")
-st.markdown("### Stage 2: Foresight & Supply Chain Integration")
+# --- SIDEBAR: MODE SWITCHER ---
+st.sidebar.title("🎛️ Control Plane")
+mode = st.sidebar.radio("Operating Mode", ["Live Monitor", "War Room (Digital Twin)", "Analyst Workbench"])
 
-# --- SIDEBAR: ALERT CENTER ---
-st.sidebar.title("🔔 Alert Center")
-if st.sidebar.button("Clear Alerts"): st.session_state['alerts'] = []
+st.title(f"Sentinel-Node: {mode}")
 
-if st.session_state['alerts']:
-    for alert in st.session_state['alerts']:
-        st.sidebar.error(alert)
-else:
-    st.sidebar.info("No active push notifications.")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("System Modules Active:")
-st.sidebar.checkbox("Predictive Risk Engine", value=True, disabled=True)
-st.sidebar.checkbox("AIS Traffic Simulator", value=True, disabled=True)
-st.sidebar.checkbox("Dependency Graphing", value=True, disabled=True)
-
-# --- MAP LAYER ---
-# Base Map
-m = folium.Map(location=[20.0, 0.0], zoom_start=2, tiles="CartoDB dark_matter")
-
-# Add Static Asset Markers
-for name, data in GEO_ASSETS.items():
-    color = "red" if data['type'] == "Conflict Zone" else "orange" if data['type'] == "Choke Point" else "blue"
-    folium.Marker(data['coords'], popup=name, icon=folium.Icon(color=color, icon="info-sign")).add_to(m)
-
-# Logic: If we have an active scan, show the AIS ships for that region
-if st.session_state['active_scan']:
-    target = st.session_state['active_scan']['target']
-    risk_level = st.session_state['active_scan']['prediction']['delay_prob']
+# ==========================================
+# MODE 1: LIVE MONITOR (The Map)
+# ==========================================
+if mode == "Live Monitor":
+    st.markdown("### 🌍 Global Risk Operating Picture")
     
-    # Determine traffic state based on predicted risk
-    traffic_state = "Disrupted" if risk_level > 50 else "Normal"
+    # Map
+    m = folium.Map(location=[20.0, 0.0], zoom_start=2, tiles="CartoDB dark_matter")
+    for name, data in GEO_ASSETS.items():
+        color = "red" if data['type'] == "Conflict Zone" else "orange" if data['type'] == "Choke Point" else "blue"
+        folium.Marker(data['coords'], popup=name, icon=folium.Icon(color=color, icon="info-sign")).add_to(m)
     
-    # Generate Ships
-    ships = generate_ais_traffic(GEO_ASSETS[target]['coords'], traffic_state)
+    map_data = st_folium(m, height=400, width="100%")
     
-    # Add Ships to Map
-    for ship in ships:
-        ship_color = "green" if ship['status'] == "Underway using engine" else "red"
-        folium.CircleMarker(
-            location=ship['coords'],
-            radius=4,
-            color=ship_color,
-            fill=True,
-            popup=f"<b>{ship['name']}</b><br>{ship['type']}<br>Status: {ship['status']}"
-        ).add_to(m)
+    # Supplier Auto-Audit (Background Task)
+    with st.expander("🛡️ Automated Supplier Audit (24/7 Watch)"):
+        if st.button("Run Manual Supplier Scan"):
+            with st.spinner("Auditing Vendor List against Global Risk DB..."):
+                audit_df = audit_suppliers(CLIENT_SUPPLIERS)
+                st.dataframe(audit_df.style.map(lambda v: 'color: red;' if v == 'HIGH' else 'color: orange;' if v == 'MEDIUM' else 'color: green;', subset=['Risk']))
+                st.success("Audit Complete. 2 Vendors flagged for review.")
 
-st_data = st_folium(m, height=400, width="100%")
-
-# --- LOGIC: EXECUTE PREDICTION ---
-trigger = None
-if st_data and st_data.get("last_object_clicked_popup"):
-    clicked = st_data["last_object_clicked_popup"]
-    if clicked in GEO_ASSETS: trigger = clicked
-
-engine = PredictiveEngine()
-
-if trigger:
-    with st.spinner(f"🧠 Calculating Predictive Risk Models for: {trigger}..."):
-        res, velocity, delay_prob = engine.scan_target(GEO_ASSETS[trigger]['query'])
-        
-        # Save to state
-        st.session_state['active_scan'] = {
-            'target': trigger, 
-            'data': res,
-            'prediction': {'velocity': velocity, 'delay_prob': delay_prob}
-        }
-        
-        # Trigger Push Alert if Risk is High (Simulation)
-        if delay_prob > 60:
-            alert_msg = f"⚠️ HIGH PREDICTION: {trigger} delay probability rose to {int(delay_prob)}%. Notification sent to Slack/Teams."
-            if alert_msg not in st.session_state['alerts']:
-                st.session_state['alerts'].append(alert_msg)
-
-# --- DASHBOARD ---
-if st.session_state['active_scan']:
-    scan = st.session_state['active_scan']
-    data = scan['data']
-    pred = scan['prediction']
-    target = scan['target']
+# ==========================================
+# MODE 2: WAR ROOM (Digital Twin)
+# ==========================================
+elif mode == "War Room (Digital Twin)":
+    st.markdown("### 🎲 Scenario Simulation & ERP Impact")
     
-    st.markdown("---")
-    st.header(f"📊 Predictive Analysis: {target}")
-
-    # 1. Prediction Cards
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns([1, 2])
     
     with c1:
-        st.metric("Risk Velocity (24h Trend)", f"{pred['velocity']:.1f}%", delta_color="inverse")
-        st.caption("Speed of risk escalation vs yesterday")
+        st.subheader("Simulation Parameters")
+        target_sim = st.selectbox("Select Asset to Disrupt", list(GEO_ASSETS.keys()))
+        days_sim = st.slider("Disruption Duration (Days)", 1, 30, 7)
+        severity_sim = st.select_slider("Disruption Severity", ["Minor Delay", "Port Congestion", "Total Blockade"])
         
+        if st.button("🚀 RUN SIMULATION", type="primary"):
+            with st.spinner("Calculating Economic Impact & Querying ERP..."):
+                impact, erp = run_simulation(target_sim, days_sim)
+                st.session_state['sim_result'] = {'impact': impact, 'erp': erp, 'days': days_sim, 'target': target_sim}
+
     with c2:
-        prob_color = "red" if pred['delay_prob'] > 50 else "green"
-        st.metric("Predicted Delay Probability", f"{int(pred['delay_prob'])}%")
-        st.progress(int(pred['delay_prob'])/100)
-        
-    with c3:
-        status = "CRITICAL" if pred['delay_prob'] > 70 else "WARNING" if pred['delay_prob'] > 40 else "STABLE"
-        st.metric("Operational Status", status)
+        if 'sim_result' in st.session_state:
+            res = st.session_state['sim_result']
+            
+            # Top Metrics
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Revenue at Risk", f"${res['impact']/1000000:.1f}M", delta="-100%", delta_color="inverse")
+            m2.metric("ERP Inventory Status", res['erp']['Status'])
+            m3.metric("Days of Cover", res['erp']['Inventory'])
+            
+            st.markdown("---")
+            
+            # ERP Integration View
+            st.subheader("📦 ERP System Link (SAP/Oracle)")
+            st.info(f"**Automatic Query:** Checking BOM (Bill of Materials) dependent on '{res['target']}'...")
+            
+            erp_df = pd.DataFrame([
+                {"Part ID": res['erp']['Part'], "Warehouse": "Ohio, USA", "Qty On Hand": "8,400 Units", "Daily Burn": res['erp']['Daily_Burn'], "Stockout Est": f"In {res['erp']['Inventory']}"}
+            ])
+            st.table(erp_df)
+            
+            # Visual Impact Curve
+            st.subheader("📉 Revenue Impact Curve")
+            chart_data = pd.DataFrame({
+                'Day': range(1, 31),
+                'Cumulative Loss ($M)': [(x * (res['impact']/res['days'])/1000000) for x in range(1, 31)]
+            })
+            
+            chart = alt.Chart(chart_data).mark_line(color='red').encode(
+                x='Day', y='Cumulative Loss ($M)', tooltip=['Day', 'Cumulative Loss ($M)']
+            ).properties(height=250)
+            
+            st.altair_chart(chart, use_container_width=True)
+            
+            if res['erp']['Status'] == "CRITICAL":
+                st.error(f"⚠️ CRITICAL INVENTORY ALERT: {res['erp']['Part']} will stock out before disruption ends. Immediate supplier diversification required.")
+
+# ==========================================
+# MODE 3: ANALYST WORKBENCH
+# ==========================================
+elif mode == "Analyst Workbench":
+    st.markdown("### 🕵️ Analyst-in-the-Loop Verification")
+    st.caption("Premium Tier: Human validation of AI alerts before C-Suite notification.")
+    
+    # Mock generating a queue if empty
+    if not st.session_state['analyst_queue']:
+        st.session_state['analyst_queue'] = [
+            {"id": 101, "title": "Strait of Malacca: Collision reported near Singapore", "risk": "HIGH", "ai_conf": 88},
+            {"id": 102, "title": "TSMC reports minor earthquake damage", "risk": "MEDIUM", "ai_conf": 65},
+            {"id": 103, "title": "Houthi drone intercepted over Red Sea", "risk": "CRITICAL", "ai_conf": 92}
+        ]
+    
+    # Queue Display
+    for alert in st.session_state['analyst_queue']:
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([3, 1, 1])
+            with c1:
+                st.markdown(f"**{alert['risk']}**: {alert['title']}")
+                st.caption(f"AI Confidence: {alert['ai_conf']}% | ID: {alert['id']}")
+            with c2:
+                if st.button("✅ Approve", key=f"app_{alert['id']}"):
+                    st.session_state['verified_alerts'].append(alert)
+                    st.session_state['analyst_queue'].remove(alert)
+                    st.rerun()
+            with c3:
+                if st.button("❌ Reject", key=f"rej_{alert['id']}"):
+                    st.session_state['analyst_queue'].remove(alert)
+                    st.rerun()
 
     st.markdown("---")
-
-    # 2. Supply Chain Impact Graph (The "Ripple Effect")
-    c_graph, c_feed = st.columns([1, 1])
-    
-    with c_graph:
-        st.subheader("🔗 Supply Chain Impact Graph")
-        st.caption(f"If {target} fails, these entities are At Risk:")
-        
-        # Build Graph
-        graph = graphviz.Digraph()
-        graph.attr(rankdir='LR')
-        
-        # Root Node
-        root_color = "red" if pred['delay_prob'] > 60 else "orange"
-        graph.node(target, style="filled", fillcolor=root_color, color="black")
-        
-        # Dependencies
-        dependencies = SUPPLY_CHAIN_MAP.get(target, ["Global Shipping", "Regional Logistics"])
-        
-        for dep in dependencies:
-            # Logic: If root is bad, children are "At Risk" (Yellow)
-            child_color = "yellow" if pred['delay_prob'] > 40 else "lightgrey"
-            graph.node(dep, style="filled", fillcolor=child_color)
-            graph.edge(target, dep, label="Impact Flow")
-            
-        st.graphviz_chart(graph)
-
-    # 3. Intelligence Feed
-    with c_feed:
-        st.subheader("📋 Causal Factors (News)")
-        df = pd.DataFrame(data)
-        if not df.empty:
-            for _, row in df[:5].iterrows():
-                 icon = "🔴" if row['Risk'] == "CRITICAL" else "🟠" if row['Risk'] == "HIGH" else "🟢"
-                 st.write(f"{icon} **{row['Category']}**: {row['Title']}")
-                 st.caption(f"Source: {row['Source']}")
+    st.subheader("📤 C-Suite Verified Feed")
+    if st.session_state['verified_alerts']:
+        st.dataframe(pd.DataFrame(st.session_state['verified_alerts']))
+    else:
+        st.info("No verified alerts pushed to executive dashboard yet.")
