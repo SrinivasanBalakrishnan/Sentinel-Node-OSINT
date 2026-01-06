@@ -3,283 +3,287 @@ import feedparser
 import pandas as pd
 from textblob import TextBlob
 from datetime import datetime, timedelta
-import concurrent.futures  # ADDED: For parallel scanning
+import folium
+from streamlit_folium import st_folium
+import altair as alt
+import graphviz
+import random
 import time
+import re
 
-# --- CONFIGURATION ---
-REGIONS = {
-    "🌎 Americas": {
-        "Panama Canal": '"Panama Canal" OR "Gatun Lake" OR "Panama drought" OR "Maersk Panama"',
-        "Gulf of Mexico": '"Gulf of Mexico oil" OR "Pemex platform" OR "US gulf coast port"',
-        "Latin America Minerals": '"Lithium triangle" OR "Chile lithium" OR "Peru copper mines"'
-    },
-    "🌍 MENA": {
-        "Red Sea / Suez": '"Red Sea" OR "Suez Canal" OR "Houthi" OR "Bab el-Mandeb"',
-        "Strait of Hormuz": '"Strait of Hormuz" OR "Iranian navy" OR "oil tanker seized"',
-        "Eastern Mediterranean": '"Eastern Mediterranean gas" OR "Cyprus Exclusive Economic Zone"'
-    },
-    "🌏 Indo-Pacific": {
-        "Strait of Malacca": '"Strait of Malacca" OR "Singapore Strait" OR "Malacca Strait"',
-        "Taiwan Strait": '"Taiwan Strait" OR "PLA navy" OR "TSMC" OR "Taiwan defense"',
-        "South China Sea": '"South China Sea" OR "Spratly Islands" OR "Second Thomas Shoal"',
-        "Indian Ocean": '"Indian Ocean" OR "Hambantota port" OR "Diego Garcia"'
-    },
-    "🌊 Oceania": {
-        "Pacific Island Chains": '"Solomon Islands china" OR "Papua New Guinea port"',
-        "Coral Sea": '"Coral Sea" OR "Great Barrier Reef shipping"'
-    }
+# --- CONFIGURATION: SUPPLY CHAIN GRAPH ---
+# This maps assets to their downstream dependencies.
+# If the Key has a risk, the Values (Children) get a "Warning".
+SUPPLY_CHAIN_MAP = {
+    "Taiwan Strait": ["TSMC (Taiwan)", "Foxconn (China)", "Apple (USA)", "Nvidia (USA)"],
+    "Strait of Malacca": ["Port of Singapore", "Tesla Giga Shanghai", "Toyota (Japan)", "Rotterdam Hub"],
+    "Red Sea Corridor": ["Maersk Line", "Hapag-Lloyd", "Volkswagen (EU)", "IKEA Global"],
+    "Gulf of Mexico Energy": ["Pemex", "ExxonMobil Refineries", "US Plastics Industry"],
 }
 
-INDUSTRIES = {
-    "📱 Semiconductors": '"TSMC" OR "Nvidia" OR "Foxconn" OR "ASML" OR "chip shortage"',
-    "🔋 Critical Minerals": '"Lithium supply" OR "Cobalt mining" OR "Rare earth elements"',
-    "⚡ Renewable Energy": '"Solar panel supply chain" OR "Wind turbine components"',
-    "🛡️ Defense Ind. Base": '"Lockheed Martin supply" OR "Artillery shell production"',
-    "🌾 Food Security": '"Wheat export ban" OR "Rice export india" OR "Fertilizer shortage"'
+# --- ASSET DATABASE WITH PREDICTIVE METADATA ---
+GEO_ASSETS = {
+    "Panama Canal": {"coords": [9.101, -79.695], "query": '"Panama Canal" OR "Gatun Lake"', "region": "Americas", "type": "Choke Point"},
+    "Gulf of Mexico Energy": {"coords": [25.000, -90.000], "query": '"Gulf of Mexico oil" OR "Pemex platform"', "region": "Americas", "type": "Energy Asset"},
+    "Red Sea Corridor": {"coords": [20.000, 38.000], "query": '"Red Sea" OR "Suez Canal" OR "Houthi"', "region": "MENA", "type": "Trade Route"},
+    "Strait of Hormuz": {"coords": [26.566, 56.416], "query": '"Strait of Hormuz" OR "Iranian navy"', "region": "MENA", "type": "Choke Point"},
+    "Strait of Malacca": {"coords": [4.000, 100.000], "query": '"Strait of Malacca" OR "Singapore Strait"', "region": "Indo-Pacific", "type": "Choke Point"},
+    "Taiwan Strait": {"coords": [24.000, 119.000], "query": '"Taiwan Strait" OR "PLA navy" OR "TSMC"', "region": "Indo-Pacific", "type": "Conflict Zone"},
+    "South China Sea": {"coords": [12.000, 113.000], "query": '"South China Sea" OR "Spratly Islands"', "region": "Indo-Pacific", "type": "Conflict Zone"},
+    "Rotterdam Port": {"coords": [51.922, 4.477], "query": '"Port of Rotterdam" OR "Maasvlakte"', "region": "Europe", "type": "Port Terminal"}
 }
 
-# REFINED KILL SWITCH: Specific phrases to avoid false positives on "drone" or "suspended"
-CRITICAL_PHRASES = [
-    "missile attack", "drone strike", "ship sinking", "vessel sinking",
-    "port blocked", "canal blocked", "navigation suspended", 
-    "sanctions imposed", "cargo seized", "oil spill", "collision at sea"
-]
+EVENT_PATTERNS = {
+    "Military Conflict": [r"missile", r"drone", r"navy", r"warship", r"attack", r"fired"],
+    "Supply Chain Delay": [r"blocked", r"grounded", r"suspended", r"congestion", r"delay", r"collision"],
+    "Regulatory Sanction": [r"sanction", r"seized", r"ban", r"tariff", r"customs"],
+    "Natural Disaster": [r"cyclone", r"typhoon", r"earthquake", r"tsunami", r"flood"]
+}
 
-EXCLUDED_TERMS = ["Football", "Cricket", "Movie", "Celeb", "Gossip", "Reality TV"]
+# --- ENGINE 1: INTELLIGENCE & PREDICTION ---
+class PredictiveEngine:
+    def __init__(self):
+        self.headers = {'User-Agent': 'SentinelNode-Predictor'}
 
-# --- HELPER FUNCTIONS ---
-def parse_date(entry):
-    """Safely extracts date from RSS entry, falling back to Now if missing."""
-    if hasattr(entry, 'published_parsed') and entry.published_parsed:
-        return datetime(*entry.published_parsed[:6])
-    elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-        return datetime(*entry.updated_parsed[:6])
-    return datetime.now()
+    def fetch_feed(self, url):
+        try: return feedparser.parse(url)
+        except: return None
 
-def get_date_string(days_ago):
-    return (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+    def calculate_risk_velocity(self, current_risk_score):
+        """
+        Simulates historical comparison. 
+        In production, this queries a database of yesterday's scores.
+        """
+        # Mocking 'Yesterday's Score' for demo purposes
+        yesterday_score = current_risk_score * random.uniform(0.8, 1.2)
+        velocity = ((current_risk_score - yesterday_score) / yesterday_score) * 100
+        return velocity
 
-def fetch_url(url):
-    """Simple wrapper for parallel execution."""
-    return feedparser.parse(url)
+    def predict_delay_prob(self, risk_velocity, category):
+        """Predicts probability of shipping delays based on risk trend."""
+        base_prob = 10
+        if risk_velocity > 0: base_prob += 20
+        if risk_velocity > 20: base_prob += 40
+        if category == "Supply Chain Delay": base_prob += 20
+        return min(base_prob, 95)
 
-def build_search_url(query, when=None, after=None, before=None):
-    base_query = query.replace(" ", "%20")
-    if after and before:
-        # Google News RSS strict date slicing
-        final_query = f"{base_query}+after:{after}+before:{before}"
-    elif when:
-        final_query = f"{base_query}%20when:{when}"
-    else:
-        final_query = base_query
-    
-    return f"https://news.google.com/rss/search?q={final_query}&hl=en-IN&gl=IN&ceid=IN:en"
-
-def get_intel_concurrent(query_string, time_mode):
-    """Fetches data using ThreadPool for 3x speedup on deep dives."""
-    urls = []
-    
-    if time_mode in ["Last 24 Hours", "Last 7 Days"]:
-        map_time = {"Last 24 Hours": "1d", "Last 7 Days": "7d"}
-        urls.append(build_search_url(query_string, when=map_time[time_mode]))
-
-    elif time_mode == "Past 1 Month":
-        # Create 3 time slices to bypass Google's 100-item limit
-        urls.append(build_search_url(query_string, when="7d")) # Week 1
-        urls.append(build_search_url(query_string, after=get_date_string(14), before=get_date_string(7))) # Week 2
-        urls.append(build_search_url(query_string, after=get_date_string(30), before=get_date_string(14))) # Weeks 3-4
-
-    # PARALLEL EXECUTION
-    all_feeds = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = executor.map(fetch_url, urls)
-        all_feeds = list(results)
-
-    # PROCESS
-    processed_data = []
-    seen_links = set() # Dedup by Link is safer than Title
-
-    for feed in all_feeds:
-        for entry in feed.entries:
-            # Noise Filter
-            if any(term.lower() in entry.title.lower() for term in EXCLUDED_TERMS):
-                continue
-            
-            # Deduplication (Link based)
-            if entry.link in seen_links:
-                continue
-            seen_links.add(entry.link)
-
-            pub_date = parse_date(entry)
-            pub_date_str = pub_date.strftime("%Y-%m-%d")
-
-            # AI Analysis
-            text = f"{entry.title} {entry.get('summary', '')}"
-            blob = TextBlob(text)
-            sentiment = blob.sentiment.polarity
-            
-            # Risk Logic
-            risk_score = "LOW"
-            if sentiment < -0.05: risk_score = "MEDIUM"
-            if sentiment < -0.2: risk_score = "HIGH"
-            
-            # Hard-Coded Critical Overrides
-            title_lower = entry.title.lower()
-            if any(phrase in title_lower for phrase in CRITICAL_PHRASES):
-                risk_score = "CRITICAL"
-            # Single keyword overrides (use sparingly)
-            if "houthi" in title_lower and "attack" in title_lower:
-                risk_score = "CRITICAL"
-
-            processed_data.append({
-                "Title": entry.title,
-                "Link": entry.link,
-                "Date": pub_date_str,
-                "ObjDate": pub_date, # For sorting
-                "Risk": risk_score,
-                "Sentiment": round(sentiment, 2),
-                "Source": entry.source.get('title', 'Google News')
-            })
-
-    df = pd.DataFrame(processed_data)
-    if not df.empty:
-        df = df.sort_values(by=['ObjDate'], ascending=False)
+    def scan_target(self, query):
+        base = query.replace(" ", "%20")
+        url = f"https://news.google.com/rss/search?q={base}%20when:7d&hl=en-IN&gl=IN&ceid=IN:en"
+        feed = self.fetch_feed(url)
+        results = []
         
-    return df
+        total_risk_accum = 0
 
-# --- FRONTEND ---
-st.set_page_config(page_title="SENTINEL-NODE V13", layout="wide")
+        if feed and feed.entries:
+            for entry in feed.entries[:10]:
+                text = f"{entry.title} {entry.get('summary', '')}"
+                blob = TextBlob(text)
+                
+                # Logic
+                category = "General Risk"
+                for cat, pats in EVENT_PATTERNS.items():
+                    if any(re.search(p, text.lower()) for p in pats):
+                        category = cat; break
+                
+                risk_val = 1 # Low
+                if blob.sentiment.polarity < -0.05: risk_val = 2 # Med
+                if blob.sentiment.polarity < -0.2: risk_val = 3 # High
+                if category == "Military Conflict" and risk_val >= 2: risk_val = 4 # Crit
 
-# STATE MANAGEMENT: Initialize 'active_scan' to persist data across re-runs
-if 'active_scan' not in st.session_state:
-    st.session_state['active_scan'] = {'target': None, 'query': None, 'data': None}
-if 'page_number' not in st.session_state:
-    st.session_state['page_number'] = 0
+                total_risk_accum += risk_val
+                
+                risk_label = ["LOW", "MEDIUM", "HIGH", "CRITICAL"][risk_val-1]
 
-# SIDEBAR
-st.sidebar.title("🏭 Industry Monitor")
-selected_industry = st.sidebar.selectbox("Select Sector", ["None"] + list(INDUSTRIES.keys()))
+                results.append({
+                    "Title": entry.title,
+                    "Link": entry.link,
+                    "Date": entry.published if hasattr(entry, 'published') else "Recent",
+                    "Risk": risk_label,
+                    "RiskVal": risk_val,
+                    "Category": category,
+                    "Source": entry.source.get('title', 'Unknown')
+                })
+        
+        # Calculate Prediction Metrics
+        avg_risk = total_risk_accum / len(results) if results else 1
+        velocity = self.calculate_risk_velocity(avg_risk)
+        delay_prob = self.predict_delay_prob(velocity, results[0]['Category'] if results else "None")
+
+        return results, velocity, delay_prob
+
+# --- ENGINE 2: AIS TRAFFIC SIMULATOR ---
+def generate_ais_traffic(center_coords, traffic_density="Normal"):
+    """
+    Simulates real-time AIS vessel data points around a choke point.
+    Real API costs $50k/yr. This simulates the visualization value.
+    """
+    ships = []
+    num_ships = 10 if traffic_density == "Normal" else 5
+    
+    for _ in range(num_ships):
+        # Random scatter around the center
+        lat = center_coords[0] + random.uniform(-0.5, 0.5)
+        lon = center_coords[1] + random.uniform(-0.5, 0.5)
+        
+        ship_types = ["Container Ship", "Oil Tanker", "Bulk Carrier"]
+        status = "Underway using engine"
+        
+        # If High Risk, simulate deviations
+        if traffic_density == "Disrupted":
+            status = "Drifting / Awaiting Orders" if random.random() > 0.5 else "Rerouting"
+        
+        ships.append({
+            "name": f"Vessel-{random.randint(1000,9999)}",
+            "type": random.choice(ship_types),
+            "coords": [lat, lon],
+            "status": status
+        })
+    return ships
+
+# --- FRONTEND UI ---
+st.set_page_config(page_title="SENTINEL-NODE V19", layout="wide")
+
+if 'active_scan' not in st.session_state: st.session_state['active_scan'] = None
+if 'alerts' not in st.session_state: st.session_state['alerts'] = []
+
+st.title("🔮 Sentinel-Node: Predictive Logistics")
+st.markdown("### Stage 2: Foresight & Supply Chain Integration")
+
+# --- SIDEBAR: ALERT CENTER ---
+st.sidebar.title("🔔 Alert Center")
+if st.sidebar.button("Clear Alerts"): st.session_state['alerts'] = []
+
+if st.session_state['alerts']:
+    for alert in st.session_state['alerts']:
+        st.sidebar.error(alert)
+else:
+    st.sidebar.info("No active push notifications.")
 
 st.sidebar.markdown("---")
-st.sidebar.write("### ⚙️ Scan Settings")
-time_mode = st.sidebar.selectbox("Time Window", ["Last 24 Hours", "Last 7 Days", "Past 1 Month"], index=1)
-threat_filter = st.sidebar.selectbox("Threat Level", ["All", "CRITICAL", "HIGH", "MEDIUM", "LOW"], index=0)
+st.sidebar.caption("System Modules Active:")
+st.sidebar.checkbox("Predictive Risk Engine", value=True, disabled=True)
+st.sidebar.checkbox("AIS Traffic Simulator", value=True, disabled=True)
+st.sidebar.checkbox("Dependency Graphing", value=True, disabled=True)
 
-# APP HEADER
-st.title("📡 SENTINEL-NODE: Global Command")
+# --- MAP LAYER ---
+# Base Map
+m = folium.Map(location=[20.0, 0.0], zoom_start=2, tiles="CartoDB dark_matter")
 
-# TABS LAYOUT
-tab1, tab2, tab3, tab4 = st.tabs(list(REGIONS.keys()))
+# Add Static Asset Markers
+for name, data in GEO_ASSETS.items():
+    color = "red" if data['type'] == "Conflict Zone" else "orange" if data['type'] == "Choke Point" else "blue"
+    folium.Marker(data['coords'], popup=name, icon=folium.Icon(color=color, icon="info-sign")).add_to(m)
 
-# LOGIC HANDLER: What triggered the scan?
-trigger_target = None
-trigger_query = None
+# Logic: If we have an active scan, show the AIS ships for that region
+if st.session_state['active_scan']:
+    target = st.session_state['active_scan']['target']
+    risk_level = st.session_state['active_scan']['prediction']['delay_prob']
+    
+    # Determine traffic state based on predicted risk
+    traffic_state = "Disrupted" if risk_level > 50 else "Normal"
+    
+    # Generate Ships
+    ships = generate_ais_traffic(GEO_ASSETS[target]['coords'], traffic_state)
+    
+    # Add Ships to Map
+    for ship in ships:
+        ship_color = "green" if ship['status'] == "Underway using engine" else "red"
+        folium.CircleMarker(
+            location=ship['coords'],
+            radius=4,
+            color=ship_color,
+            fill=True,
+            popup=f"<b>{ship['name']}</b><br>{ship['type']}<br>Status: {ship['status']}"
+        ).add_to(m)
 
-# 1. Industry Trigger
-if selected_industry != "None":
-    st.info(f"🔭 **MODE:** Industry Scan - {selected_industry}")
-    if st.button("🚀 INITIALIZE INDUSTRY SCAN", type="primary", use_container_width=True):
-        trigger_target = selected_industry
-        trigger_query = INDUSTRIES[selected_industry]
+st_data = st_folium(m, height=400, width="100%")
 
-# 2. Map Trigger (Only show if no industry selected to avoid clutter)
-else:
-    def render_buttons(region_key, cols_count):
-        cols = st.columns(cols_count)
-        for i, (name, query) in enumerate(REGIONS[region_key].items()):
-            if cols[i % cols_count].button(f"📍 {name}", use_container_width=True):
-                return name, query
-        return None, None
+# --- LOGIC: EXECUTE PREDICTION ---
+trigger = None
+if st_data and st_data.get("last_object_clicked_popup"):
+    clicked = st_data["last_object_clicked_popup"]
+    if clicked in GEO_ASSETS: trigger = clicked
 
-    with tab1:
-        t, q = render_buttons("🌎 Americas", 3)
-        if t: trigger_target, trigger_query = t, q
-    with tab2:
-        t, q = render_buttons("🌍 MENA", 3)
-        if t: trigger_target, trigger_query = t, q
-    with tab3:
-        t, q = render_buttons("🌏 Indo-Pacific", 4)
-        if t: trigger_target, trigger_query = t, q
-    with tab4:
-        t, q = render_buttons("🌊 Oceania", 2)
-        if t: trigger_target, trigger_query = t, q
+engine = PredictiveEngine()
 
-# EXECUTION: If a trigger happened, update Session State and Run
-if trigger_target:
-    st.session_state['page_number'] = 0
-    with st.spinner(f"Scanning Vector: {trigger_target} ({time_mode})..."):
-        df_result = get_intel_concurrent(trigger_query, time_mode)
-        # Store in session state so it survives re-runs
+if trigger:
+    with st.spinner(f"🧠 Calculating Predictive Risk Models for: {trigger}..."):
+        res, velocity, delay_prob = engine.scan_target(GEO_ASSETS[trigger]['query'])
+        
+        # Save to state
         st.session_state['active_scan'] = {
-            'target': trigger_target,
-            'query': trigger_query,
-            'data': df_result.to_dict('records') if not df_result.empty else []
+            'target': trigger, 
+            'data': res,
+            'prediction': {'velocity': velocity, 'delay_prob': delay_prob}
         }
-
-# RENDER RESULTS (Always read from Session State)
-active_data = st.session_state['active_scan']['data']
-active_target = st.session_state['active_scan']['target']
-
-st.markdown("---")
-if active_target and active_data is not None:
-    df = pd.DataFrame(active_data)
-    
-    # Filter by Threat (Visual only, doesn't delete data)
-    if threat_filter != "All":
-        df = df[df['Risk'] == threat_filter]
-
-    # Metrics
-    m1, m2, m3 = st.columns(3)
-    m1.metric("TARGET", active_target)
-    m2.metric("INTEL FOUND", len(df))
-    if not df.empty:
-        m3.metric("CRITICAL THREATS", len(df[df['Risk'] == "CRITICAL"]))
-    
-    st.markdown("### 🛑 Live Feed")
-    
-    if df.empty:
-        st.warning(f"No events found matching threat level: **{threat_filter}**")
-    else:
-        # Pagination Logic
-        if 'items_per_page' not in st.session_state: st.session_state['items_per_page'] = 5
         
-        total_pages = max(1, (len(df) // st.session_state['items_per_page']) + (1 if len(df) % st.session_state['items_per_page'] > 0 else 0))
-        if st.session_state['page_number'] >= total_pages: st.session_state['page_number'] = 0
-        
-        start_idx = st.session_state['page_number'] * st.session_state['items_per_page']
-        end_idx = start_idx + st.session_state['items_per_page']
-        page_data = df.iloc[start_idx:end_idx]
+        # Trigger Push Alert if Risk is High (Simulation)
+        if delay_prob > 60:
+            alert_msg = f"⚠️ HIGH PREDICTION: {trigger} delay probability rose to {int(delay_prob)}%. Notification sent to Slack/Teams."
+            if alert_msg not in st.session_state['alerts']:
+                st.session_state['alerts'].append(alert_msg)
 
-        for _, row in page_data.iterrows():
-            if row['Risk'] == "CRITICAL":
-                st.error(f"🔴 **CRITICAL:** {row['Title']}")
-            elif row['Risk'] == "HIGH":
-                st.warning(f"🟠 **HIGH:** {row['Title']}")
-            elif row['Risk'] == "MEDIUM":
-                st.warning(f"🟡 **MEDIUM:** {row['Title']}")
-            else:
-                st.success(f"🟢 **STABLE:** {row['Title']}")
+# --- DASHBOARD ---
+if st.session_state['active_scan']:
+    scan = st.session_state['active_scan']
+    data = scan['data']
+    pred = scan['prediction']
+    target = scan['target']
+    
+    st.markdown("---")
+    st.header(f"📊 Predictive Analysis: {target}")
+
+    # 1. Prediction Cards
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.metric("Risk Velocity (24h Trend)", f"{pred['velocity']:.1f}%", delta_color="inverse")
+        st.caption("Speed of risk escalation vs yesterday")
+        
+    with c2:
+        prob_color = "red" if pred['delay_prob'] > 50 else "green"
+        st.metric("Predicted Delay Probability", f"{int(pred['delay_prob'])}%")
+        st.progress(int(pred['delay_prob'])/100)
+        
+    with c3:
+        status = "CRITICAL" if pred['delay_prob'] > 70 else "WARNING" if pred['delay_prob'] > 40 else "STABLE"
+        st.metric("Operational Status", status)
+
+    st.markdown("---")
+
+    # 2. Supply Chain Impact Graph (The "Ripple Effect")
+    c_graph, c_feed = st.columns([1, 1])
+    
+    with c_graph:
+        st.subheader("🔗 Supply Chain Impact Graph")
+        st.caption(f"If {target} fails, these entities are At Risk:")
+        
+        # Build Graph
+        graph = graphviz.Digraph()
+        graph.attr(rankdir='LR')
+        
+        # Root Node
+        root_color = "red" if pred['delay_prob'] > 60 else "orange"
+        graph.node(target, style="filled", fillcolor=root_color, color="black")
+        
+        # Dependencies
+        dependencies = SUPPLY_CHAIN_MAP.get(target, ["Global Shipping", "Regional Logistics"])
+        
+        for dep in dependencies:
+            # Logic: If root is bad, children are "At Risk" (Yellow)
+            child_color = "yellow" if pred['delay_prob'] > 40 else "lightgrey"
+            graph.node(dep, style="filled", fillcolor=child_color)
+            graph.edge(target, dep, label="Impact Flow")
             
-            with st.expander("Intelligence Details"):
-                st.write(f"**Date:** {row['Date']} | **Source:** {row['Source']}")
-                st.markdown(f"[Read Article]({row['Link']})")
+        st.graphviz_chart(graph)
 
-        # Pagination Controls
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1:
-            if st.button("⬅️ Previous"):
-                if st.session_state['page_number'] > 0:
-                    st.session_state['page_number'] -= 1
-                    st.rerun()
-        with c2:
-            st.markdown(f"<div style='text-align: center'>Page {st.session_state['page_number'] + 1} of {total_pages}</div>", unsafe_allow_html=True)
-        with c3:
-            if st.button("Next ➡️"):
-                if st.session_state['page_number'] < total_pages - 1:
-                    st.session_state['page_number'] += 1
-                    st.rerun()
-
-elif active_target is None:
-    st.info("Select a Region or Industry to initialize command.")
-else:
-    st.error("No intelligence found.")
+    # 3. Intelligence Feed
+    with c_feed:
+        st.subheader("📋 Causal Factors (News)")
+        df = pd.DataFrame(data)
+        if not df.empty:
+            for _, row in df[:5].iterrows():
+                 icon = "🔴" if row['Risk'] == "CRITICAL" else "🟠" if row['Risk'] == "HIGH" else "🟢"
+                 st.write(f"{icon} **{row['Category']}**: {row['Title']}")
+                 st.caption(f"Source: {row['Source']}")
