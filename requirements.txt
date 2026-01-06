@@ -1,6 +1,15 @@
+#streamlit
+#feedparser
+#pandas
+#textblob
+#folium
+#streamlit-folium
 streamlit
 feedparser
 pandas
 textblob
 folium
 streamlit-folium
+torch
+transformers
+altair
