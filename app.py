@@ -10,7 +10,7 @@ from transformers import pipeline # Hugging Face AI
 import time
 import random
 
-# --- MOCK AUTH & ASSETS ---
+# -- MOCK AUTH & ASSETS --
 USERS = {
     "analyst": {"role": "Analyst", "pass": "admin"},
     "manager": {"role": "Risk Manager", "pass": "admin"},
