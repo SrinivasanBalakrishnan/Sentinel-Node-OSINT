@@ -10,240 +10,237 @@ import graphviz
 import random
 import time
 import re
+import uuid
+from PIL import Image, ImageDraw, ImageFont
+import requests
+from io import BytesIO
 
-# --- CONFIGURATION: MOCK ERP DATABASE (Stage 3) ---
-# Simulates an SAP/Oracle connection mapping regions to internal inventory.
-ERP_DATA = {
-    "Taiwan Strait": {"Part": "Microcontrollers (MCU-32)", "Inventory": "14 Days", "Status": "CRITICAL", "Daily_Burn": "$2.4M"},
-    "Strait of Malacca": {"Part": "Raw Rubber / Latex", "Inventory": "45 Days", "Status": "Healthy", "Daily_Burn": "$500k"},
-    "Red Sea Corridor": {"Part": "Finished Furniture (SKU-99)", "Inventory": "22 Days", "Status": "Warning", "Daily_Burn": "$1.1M"},
-    "Gulf of Mexico Energy": {"Part": "Petrochemical Feedstock", "Inventory": "8 Days", "Status": "CRITICAL", "Daily_Burn": "$4.5M"}
-}
+# --- CONFIGURATION: MOCK DATASETS ---
+DARK_WEB_SOURCES = [
+    "BreachForums (TOR)", "LockBit Leaks (.onion)", "XSS.is", "Exploit.in", "Dread Forum"
+]
 
-# --- SUPPLIER WATCHLIST (Stage 3) ---
-# Clients upload their specific vendors here.
-CLIENT_SUPPLIERS = ["TSMC", "Foxconn", "Maersk", "Samsung Electronics", "Toyota Group"]
+THREAT_ACTORS = [
+    "Lazarus Group", "APT29", "Volt Typhoon", "Killnet", "Anonymous Sudan"
+]
 
-# --- ASSETS & PATTERNS ---
 GEO_ASSETS = {
-    "Panama Canal": {"coords": [9.101, -79.695], "query": '"Panama Canal" OR "Gatun Lake"', "region": "Americas", "type": "Choke Point", "Trade_Vol": "$270M/day"},
-    "Gulf of Mexico Energy": {"coords": [25.000, -90.000], "query": '"Gulf of Mexico oil" OR "Pemex platform"', "region": "Americas", "type": "Energy Asset", "Trade_Vol": "$1.2B/day"},
-    "Red Sea Corridor": {"coords": [20.000, 38.000], "query": '"Red Sea" OR "Suez Canal" OR "Houthi"', "region": "MENA", "type": "Trade Route", "Trade_Vol": "$900M/day"},
-    "Strait of Hormuz": {"coords": [26.566, 56.416], "query": '"Strait of Hormuz" OR "Iranian navy"', "region": "MENA", "type": "Choke Point", "Trade_Vol": "$2.1B/day"},
-    "Strait of Malacca": {"coords": [4.000, 100.000], "query": '"Strait of Malacca" OR "Singapore Strait"', "region": "Indo-Pacific", "type": "Choke Point", "Trade_Vol": "$3.5B/day"},
-    "Taiwan Strait": {"coords": [24.000, 119.000], "query": '"Taiwan Strait" OR "PLA navy" OR "TSMC"', "region": "Indo-Pacific", "type": "Conflict Zone", "Trade_Vol": "$1.8B/day"},
-    "South China Sea": {"coords": [12.000, 113.000], "query": '"South China Sea" OR "Spratly Islands"', "region": "Indo-Pacific", "type": "Conflict Zone", "Trade_Vol": "$3.0B/day"},
+    "Panama Canal": {"coords": [9.101, -79.695], "query": '"Panama Canal"', "region": "Americas", "type": "Choke Point"},
+    "Gulf of Mexico Energy": {"coords": [25.000, -90.000], "query": '"Gulf of Mexico oil"', "region": "Americas", "type": "Energy Asset"},
+    "Red Sea Corridor": {"coords": [20.000, 38.000], "query": '"Red Sea"', "region": "MENA", "type": "Trade Route"},
+    "Taiwan Strait": {"coords": [24.000, 119.000], "query": '"Taiwan Strait"', "region": "Indo-Pacific", "type": "Conflict Zone"},
+    "Strait of Malacca": {"coords": [4.000, 100.000], "query": '"Strait of Malacca"', "region": "Indo-Pacific", "type": "Choke Point"},
 }
 
-EVENT_PATTERNS = {
-    "Military Conflict": [r"missile", r"drone", r"navy", r"warship", r"attack", r"fired"],
-    "Supply Chain Delay": [r"blocked", r"grounded", r"suspended", r"congestion", r"delay", r"collision"],
-    "Regulatory Sanction": [r"sanction", r"seized", r"ban", r"tariff", r"customs"],
-    "Natural Disaster": [r"cyclone", r"typhoon", r"earthquake", r"tsunami", r"flood"]
-}
-
-# --- ENGINE: CORE INTELLIGENCE ---
-class SentinelEngine:
-    def fetch_feed(self, url):
-        try: return feedparser.parse(url)
-        except: return None
-
-    def scan_target(self, query):
-        base = query.replace(" ", "%20")
-        url = f"https://news.google.com/rss/search?q={base}%20when:7d&hl=en-IN&gl=IN&ceid=IN:en"
-        feed = self.fetch_feed(url)
-        results = []
-        if feed and feed.entries:
-            for entry in feed.entries[:8]: # Fast scan
-                text = f"{entry.title} {entry.get('summary', '')}"
-                blob = TextBlob(text)
-                category = "General Risk"
-                for cat, pats in EVENT_PATTERNS.items():
-                    if any(re.search(p, text.lower()) for p in pats):
-                        category = cat; break
-                
-                risk_val = 1
-                if blob.sentiment.polarity < -0.05: risk_val = 2
-                if blob.sentiment.polarity < -0.2: risk_val = 3
-                if category == "Military Conflict" and risk_val >= 2: risk_val = 4
-                
-                results.append({
-                    "Title": entry.title,
-                    "Link": entry.link,
-                    "Risk": ["LOW", "MEDIUM", "HIGH", "CRITICAL"][risk_val-1],
-                    "Category": category,
-                    "Source": entry.source.get('title', 'Unknown')
-                })
-        return results
-
-# --- MODULE: DIGITAL TWIN SIMULATOR ---
-def run_simulation(target, duration_days):
+# --- MODULE 1: SATELLITE COMPUTER VISION ---
+def generate_satellite_analysis(target_name):
     """
-    Simulates revenue impact based on duration of closure.
+    Simulates fetching a satellite image and running YOLO/Computer Vision on it.
+    Draws bounding boxes on a placeholder image to demonstrate the capability.
     """
-    asset_data = GEO_ASSETS[target]
-    daily_vol_str = asset_data.get("Trade_Vol", "$0")
+    # 1. Create a dummy image (In real life, this comes from Maxar/Planet API)
+    img = Image.new('RGB', (800, 450), color=(10, 20, 30))
+    d = ImageDraw.Draw(img)
     
-    # Parse "$1.2B" to float
-    multiplier = 1000000 if 'M' in daily_vol_str else 1000000000
-    daily_val = float(re.findall(r"[\d\.]+", daily_vol_str)[0]) * multiplier
+    # 2. Simulate "Terrain"
+    d.rectangle([50, 200, 750, 400], fill=(20, 40, 60)) # Water/Land
     
-    total_impact = daily_val * duration_days * 0.4 # Assuming 40% value at risk
+    # 3. Simulate Object Detection (Ships/Troops)
+    detections = []
+    num_objects = random.randint(3, 15)
     
-    # Check ERP status
-    erp_status = ERP_DATA.get(target, {"Part": "Generic Cargo", "Inventory": "Unknown", "Status": "Unknown"})
-    
-    return total_impact, erp_status
-
-# --- MODULE: SUPPLIER AUDITOR ---
-def audit_suppliers(supplier_list):
-    """
-    Scans specifically for supplier names in the risk database.
-    """
-    engine = SentinelEngine()
-    audit_results = []
-    
-    for supplier in supplier_list:
-        # Mocking a directed scan for the supplier
-        res = engine.scan_target(f'"{supplier}" supply chain OR production')
+    for i in range(num_objects):
+        x = random.randint(100, 700)
+        y = random.randint(220, 380)
+        w, h = random.randint(20, 50), random.randint(10, 30)
         
-        risk_score = "LOW"
-        if res:
-            # If any high risk article found, flag supplier
-            if any(r['Risk'] in ["HIGH", "CRITICAL"] for r in res):
-                risk_score = "HIGH"
-            elif any(r['Risk'] == "MEDIUM" for r in res):
-                risk_score = "MEDIUM"
+        # Color code based on type
+        obj_type = random.choice(["Civilian Vessel", "Warship", "Troop Transport"])
+        color = "red" if obj_type == "Warship" else "green"
         
-        audit_results.append({"Vendor": supplier, "Risk": risk_score, "Hits": len(res)})
+        # Draw Bounding Box
+        d.rectangle([x, y, x+w, y+h], outline=color, width=2)
+        d.text((x, y-10), obj_type, fill=color)
         
-    return pd.DataFrame(audit_results)
+        detections.append({"Type": obj_type, "Coords": (x, y), "Confidence": random.uniform(0.85, 0.99)})
+    
+    # Add Overlay Text
+    d.text((10, 10), f"SATELLITE FEED: {target_name.upper()}", fill="white")
+    d.text((10, 25), f"SOURCE: SENTINEL-ORBIT-1 | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC", fill="white")
+    
+    return img, detections
+
+# --- MODULE 2: DARK WEB MONITOR ---
+def scan_dark_web(target_keywords):
+    """
+    Simulates scanning TOR hidden services for keyword mentions.
+    """
+    results = []
+    for _ in range(random.randint(2, 6)):
+        source = random.choice(DARK_WEB_SOURCES)
+        actor = random.choice(THREAT_ACTORS)
+        
+        # Simulate a chatter snippet
+        snippets = [
+            f"Selling access to {target_keywords} logistics portal. Price: 5 BTC.",
+            f"DDoS attack scheduled for {target_keywords} infrastructure on Friday.",
+            f"Leaked employee credentials for {target_keywords} region ops.",
+            f"Looking for blueprints of {target_keywords} control systems."
+        ]
+        
+        results.append({
+            "Source": source,
+            "Actor": actor,
+            "Snippet": random.choice(snippets),
+            "Severity": "CRITICAL" if "Selling" in snippets else "HIGH",
+            "Date": (datetime.now() - timedelta(hours=random.randint(1, 48))).strftime('%Y-%m-%d %H:%M')
+        })
+    return pd.DataFrame(results)
+
+# --- MODULE 3: API MANAGER ---
+def generate_api_key():
+    return f"sk_live_{uuid.uuid4().hex[:24]}"
 
 # --- FRONTEND UI ---
-st.set_page_config(page_title="SENTINEL-NODE V20", layout="wide")
+st.set_page_config(page_title="SENTINEL-NODE V21", layout="wide")
 
-if 'analyst_queue' not in st.session_state: st.session_state['analyst_queue'] = []
-if 'verified_alerts' not in st.session_state: st.session_state['verified_alerts'] = []
+if 'api_keys' not in st.session_state: st.session_state['api_keys'] = []
+if 'usage_stats' not in st.session_state: st.session_state['usage_stats'] = {"requests": 1240, "latency": "45ms", "errors": "0.01%"}
 
-# --- SIDEBAR: MODE SWITCHER ---
-st.sidebar.title("🎛️ Control Plane")
-mode = st.sidebar.radio("Operating Mode", ["Live Monitor", "War Room (Digital Twin)", "Analyst Workbench"])
+# --- SIDEBAR NAV ---
+st.sidebar.title("🌌 Ecosystem")
+mode = st.sidebar.radio("Module Selection", 
+    ["Global Command (Map)", "🛰️ Satellite Recon", "🏴‍☠️ Dark Web Intel", "🔌 Developer API"])
 
 st.title(f"Sentinel-Node: {mode}")
 
 # ==========================================
-# MODE 1: LIVE MONITOR (The Map)
+# MODE 1: GLOBAL COMMAND (Base Map)
 # ==========================================
-if mode == "Live Monitor":
-    st.markdown("### 🌍 Global Risk Operating Picture")
-    
-    # Map
+if mode == "Global Command (Map)":
+    st.markdown("### Standard Operating Picture")
     m = folium.Map(location=[20.0, 0.0], zoom_start=2, tiles="CartoDB dark_matter")
     for name, data in GEO_ASSETS.items():
-        color = "red" if data['type'] == "Conflict Zone" else "orange" if data['type'] == "Choke Point" else "blue"
-        folium.Marker(data['coords'], popup=name, icon=folium.Icon(color=color, icon="info-sign")).add_to(m)
-    
-    map_data = st_folium(m, height=400, width="100%")
-    
-    # Supplier Auto-Audit (Background Task)
-    with st.expander("🛡️ Automated Supplier Audit (24/7 Watch)"):
-        if st.button("Run Manual Supplier Scan"):
-            with st.spinner("Auditing Vendor List against Global Risk DB..."):
-                audit_df = audit_suppliers(CLIENT_SUPPLIERS)
-                st.dataframe(audit_df.style.map(lambda v: 'color: red;' if v == 'HIGH' else 'color: orange;' if v == 'MEDIUM' else 'color: green;', subset=['Risk']))
-                st.success("Audit Complete. 2 Vendors flagged for review.")
+        folium.Marker(data['coords'], popup=name, icon=folium.Icon(color="blue", icon="info-sign")).add_to(m)
+    st_folium(m, height=500, width="100%")
 
 # ==========================================
-# MODE 2: WAR ROOM (Digital Twin)
+# MODE 2: SATELLITE RECON (Computer Vision)
 # ==========================================
-elif mode == "War Room (Digital Twin)":
-    st.markdown("### 🎲 Scenario Simulation & ERP Impact")
+elif mode == "🛰️ Satellite Recon":
+    st.markdown("### AI-Powered Imagery Analysis")
+    st.caption("Automated object detection (Warships, Congestion) on live satellite feeds.")
     
-    c1, c2 = st.columns([1, 2])
+    col1, col2 = st.columns([1, 3])
     
-    with c1:
-        st.subheader("Simulation Parameters")
-        target_sim = st.selectbox("Select Asset to Disrupt", list(GEO_ASSETS.keys()))
-        days_sim = st.slider("Disruption Duration (Days)", 1, 30, 7)
-        severity_sim = st.select_slider("Disruption Severity", ["Minor Delay", "Port Congestion", "Total Blockade"])
-        
-        if st.button("🚀 RUN SIMULATION", type="primary"):
-            with st.spinner("Calculating Economic Impact & Querying ERP..."):
-                impact, erp = run_simulation(target_sim, days_sim)
-                st.session_state['sim_result'] = {'impact': impact, 'erp': erp, 'days': days_sim, 'target': target_sim}
+    with col1:
+        target_sat = st.selectbox("Select Target Sector", list(GEO_ASSETS.keys()))
+        st.info("Satellite connection established.")
+        if st.button("📸 CAPTURE & ANALYZE"):
+            with st.spinner("Tasking satellite... Transferring raw optical data... Running CV Models..."):
+                time.sleep(2) # Fake latency
+                img, data = generate_satellite_analysis(target_sat)
+                st.session_state['sat_result'] = {'img': img, 'data': data}
 
-    with c2:
-        if 'sim_result' in st.session_state:
-            res = st.session_state['sim_result']
+    with col2:
+        if 'sat_result' in st.session_state:
+            # Display the "Processed" Image
+            st.image(st.session_state['sat_result']['img'], caption="Processed Output | YOLOv8 Model Detection", use_container_width=True)
             
-            # Top Metrics
+            # Display Detection Metrics
+            dets = st.session_state['sat_result']['data']
+            warships = len([d for d in dets if d['Type'] == 'Warship'])
+            civilians = len([d for d in dets if d['Type'] == 'Civilian Vessel'])
+            
             m1, m2, m3 = st.columns(3)
-            m1.metric("Revenue at Risk", f"${res['impact']/1000000:.1f}M", delta="-100%", delta_color="inverse")
-            m2.metric("ERP Inventory Status", res['erp']['Status'])
-            m3.metric("Days of Cover", res['erp']['Inventory'])
+            m1.metric("Objects Detected", len(dets))
+            m2.metric("Warships Identified", warships, delta_color="inverse")
+            m3.metric("Congestion Level", "HIGH" if len(dets) > 10 else "NORMAL")
             
-            st.markdown("---")
-            
-            # ERP Integration View
-            st.subheader("📦 ERP System Link (SAP/Oracle)")
-            st.info(f"**Automatic Query:** Checking BOM (Bill of Materials) dependent on '{res['target']}'...")
-            
-            erp_df = pd.DataFrame([
-                {"Part ID": res['erp']['Part'], "Warehouse": "Ohio, USA", "Qty On Hand": "8,400 Units", "Daily Burn": res['erp']['Daily_Burn'], "Stockout Est": f"In {res['erp']['Inventory']}"}
-            ])
-            st.table(erp_df)
-            
-            # Visual Impact Curve
-            st.subheader("📉 Revenue Impact Curve")
-            chart_data = pd.DataFrame({
-                'Day': range(1, 31),
-                'Cumulative Loss ($M)': [(x * (res['impact']/res['days'])/1000000) for x in range(1, 31)]
-            })
-            
-            chart = alt.Chart(chart_data).mark_line(color='red').encode(
-                x='Day', y='Cumulative Loss ($M)', tooltip=['Day', 'Cumulative Loss ($M)']
-            ).properties(height=250)
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-            if res['erp']['Status'] == "CRITICAL":
-                st.error(f"⚠️ CRITICAL INVENTORY ALERT: {res['erp']['Part']} will stock out before disruption ends. Immediate supplier diversification required.")
+            with st.expander("View Raw Detection Data"):
+                st.json(dets)
 
 # ==========================================
-# MODE 3: ANALYST WORKBENCH
+# MODE 3: DARK WEB INTEL
 # ==========================================
-elif mode == "Analyst Workbench":
-    st.markdown("### 🕵️ Analyst-in-the-Loop Verification")
-    st.caption("Premium Tier: Human validation of AI alerts before C-Suite notification.")
+elif mode == "🏴‍☠️ Dark Web Intel":
+    st.markdown("### Non-Indexed Threat Monitoring")
+    st.caption("Scanning TOR hidden services, I2P, and invite-only hacker forums.")
     
-    # Mock generating a queue if empty
-    if not st.session_state['analyst_queue']:
-        st.session_state['analyst_queue'] = [
-            {"id": 101, "title": "Strait of Malacca: Collision reported near Singapore", "risk": "HIGH", "ai_conf": 88},
-            {"id": 102, "title": "TSMC reports minor earthquake damage", "risk": "MEDIUM", "ai_conf": 65},
-            {"id": 103, "title": "Houthi drone intercepted over Red Sea", "risk": "CRITICAL", "ai_conf": 92}
-        ]
+    search_term = st.text_input("Enter Asset Keyword (e.g., 'Panama', 'Shell', 'Pipeline')", value="Maersk")
     
-    # Queue Display
-    for alert in st.session_state['analyst_queue']:
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([3, 1, 1])
-            with c1:
-                st.markdown(f"**{alert['risk']}**: {alert['title']}")
-                st.caption(f"AI Confidence: {alert['ai_conf']}% | ID: {alert['id']}")
-            with c2:
-                if st.button("✅ Approve", key=f"app_{alert['id']}"):
-                    st.session_state['verified_alerts'].append(alert)
-                    st.session_state['analyst_queue'].remove(alert)
-                    st.rerun()
-            with c3:
-                if st.button("❌ Reject", key=f"rej_{alert['id']}"):
-                    st.session_state['analyst_queue'].remove(alert)
-                    st.rerun()
+    if st.button("SEARCH UNDERGROUND"):
+        with st.spinner("Routing through TOR proxy... Scraping .onion sites..."):
+            time.sleep(1.5)
+            df_dark = scan_dark_web(search_term)
+            st.session_state['dark_data'] = df_dark
+            
+    if 'dark_data' in st.session_state:
+        df = st.session_state['dark_data']
+        
+        # Threat Cards
+        for _, row in df.iterrows():
+            with st.container(border=True):
+                c1, c2 = st.columns([4, 1])
+                with c1:
+                    st.markdown(f"**{row['Source']}** | Actor: *{row['Actor']}*")
+                    st.code(row['Snippet'], language="text")
+                with c2:
+                    st.error(row['Severity'])
+                    st.caption(row['Date'])
+                    
+        st.warning("⚠️ ACTION REQUIRED: Correlate these threats with physical security logs immediately.")
 
+# ==========================================
+# MODE 4: DEVELOPER API MARKETPLACE
+# ==========================================
+elif mode == "🔌 Developer API":
+    st.markdown("### API Integration Portal")
+    st.caption("Build your own applications on top of the Sentinel-Node Intelligence Stream.")
+    
+    # API Stats
+    st.subheader("Your Usage")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Requests (24h)", st.session_state['usage_stats']['requests'])
+    s2.metric("Avg Latency", st.session_state['usage_stats']['latency'])
+    s3.metric("Error Rate", st.session_state['usage_stats']['errors'])
+    s4.metric("Plan", "Enterprise Gold")
+    
     st.markdown("---")
-    st.subheader("📤 C-Suite Verified Feed")
-    if st.session_state['verified_alerts']:
-        st.dataframe(pd.DataFrame(st.session_state['verified_alerts']))
-    else:
-        st.info("No verified alerts pushed to executive dashboard yet.")
+    
+    # Key Management
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        st.subheader("Authentication")
+        if st.button("Generate New Secret Key"):
+            new_key = generate_api_key()
+            st.session_state['api_keys'].append({"key": new_key, "created": datetime.now().strftime('%Y-%m-%d')})
+            st.success("New key generated!")
+        
+        if st.session_state['api_keys']:
+            for k in st.session_state['api_keys']:
+                st.code(k['key'], language="bash")
+                st.caption(f"Created: {k['created']}")
+    
+    with c2:
+        st.subheader("Documentation (Quick Start)")
+        st.markdown("""
+        **Endpoint:** `GET /v1/intel/risk-score`
+        
+        **Request:**
+        ```bash
+        curl -X GET "[https://api.sentinel-node.com/v1/risk?target=taiwan_strait](https://api.sentinel-node.com/v1/risk?target=taiwan_strait)" \
+          -H "Authorization: Bearer sk_live_..."
+        ```
+        
+        **Response:**
+        ```json
+        {
+          "target": "Taiwan Strait",
+          "risk_level": "HIGH",
+          "confidence": 0.92,
+          "active_alerts": 3,
+          "forecast": "ESCALATING"
+        }
+        ```
+        """)
