@@ -5,408 +5,336 @@ import altair as alt
 import graphviz
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 import random
+import time
+from PIL import Image, ImageDraw
+import uuid
+from fpdf import FPDF
+import base64
 
 # -----------------------------------------------------------------------------
-# 1. PAGE CONFIGURATION & STYLING
+# 1. CONFIGURATION & STYLING
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="SENTINEL-NODE | Global Risk OS",
-    page_icon="📡",
+    page_title="AVELLON INTELLIGENCE",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Enterprise/Military Aesthetic
+# Custom CSS for "Command Center" Aesthetic
 st.markdown("""
 <style>
-    /* Global Font & Colors */
-    .stApp {
-        background-color: #0e1117;
-        font-family: 'Roboto Mono', monospace;
-    }
-    
-    /* Metrics Styling */
-    div[data-testid="stMetricValue"] {
-        font-size: 1.8rem !important;
-        font-weight: 700;
-        color: #e0e0e0;
-    }
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.8rem !important;
-        color: #888;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    /* Custom Badges */
-    .badge-critical { background-color: #ff2b2b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-    .badge-high { background-color: #ffa500; color: black; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-    .badge-medium { background-color: #ffd700; color: black; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-    .badge-low { background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
-    
-    /* Section Headers */
-    h1, h2, h3 {
-        color: #f0f2f6;
-        font-family: 'Segoe UI', sans-serif;
-        font-weight: 600;
-        letter-spacing: -0.5px;
-    }
-    
-    /* Card/Feed Styling */
-    .feed-card {
-        background-color: #1c2128;
-        border-left: 4px solid #444;
-        padding: 15px;
-        margin-bottom: 10px;
-        border-radius: 0 4px 4px 0;
-    }
-    .feed-card:hover {
-        border-left-color: #00d4ff;
-        background-color: #262c36;
-    }
-    
-    /* Sidebar tightness */
-    section[data-testid="stSidebar"] .block-container {
-        padding-top: 2rem;
-    }
+    .stApp { background-color: #0b0d10; font-family: 'Inter', sans-serif; }
+    h1, h2, h3 { color: #f0f2f6; letter-spacing: -0.5px; }
+    .css-card { background-color: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 6px; margin-bottom: 10px; }
+    div[data-testid="stMetricValue"] { font-family: 'Roboto Mono', monospace; color: #e0e0e0; }
+    .badge-critical { background: #7f1d1d; color: #fecaca; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; border: 1px solid #991b1b; }
+    .badge-high { background: #7c2d12; color: #fed7aa; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; border: 1px solid #c2410c; }
+    .chat-message { padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    .chat-user { background-color: #2b3137; border-left: 3px solid #00d4ff; }
+    .chat-ai { background-color: #1c2128; border-left: 3px solid #28a745; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. MOCK BACKEND INTELLIGENCE (SIMULATION LAYER)
+# 2. BACKEND LOGIC & DATA FUSION
 # -----------------------------------------------------------------------------
-class SentinelBackend:
+if 'page' not in st.session_state: st.session_state['page'] = 'Home'
+if 'authenticated' not in st.session_state: st.session_state['authenticated'] = False
+if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
+
+# --- ASSET DATABASE ---
+GEO_ASSETS = {
+    "Panama Canal": {"coords": [9.101, -79.695], "type": "Choke Point", "risk": "LOW"},
+    "Red Sea Corridor": {"coords": [20.000, 38.000], "type": "Trade Route", "risk": "CRITICAL"},
+    "Taiwan Strait": {"coords": [24.000, 119.000], "type": "Conflict Zone", "risk": "HIGH"},
+    "Strait of Malacca": {"coords": [4.000, 100.000], "type": "Choke Point", "risk": "MEDIUM"},
+    "Rotterdam Hub": {"coords": [51.922, 4.477], "type": "Port", "risk": "LOW"},
+    "Gulf of Mexico": {"coords": [25.000, -90.000], "type": "Energy", "risk": "MEDIUM"}
+}
+
+class AvellonBackend:
     @staticmethod
-    def get_global_metrics():
-        return {
-            "risk_index": 72.4,
-            "critical_events": 3,
-            "escalating": 8,
-            "stable_pct": 84,
-            "last_refresh": datetime.now().strftime("%H:%M:%S UTC"),
-            "user_role": "COMMANDER / TIER-1"
-        }
+    def get_gmt_time():
+        """Returns live GMT/UTC time, auto-corrected."""
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S GMT")
 
     @staticmethod
-    def get_map_assets():
+    def get_intel_feed():
         return [
-            {"name": "Strait of Malacca", "lat": 4.2105, "lon": 101.9758, "type": "Chokepoint", "risk": "CRITICAL", "conf": 98},
-            {"name": "Taiwan Strait", "lat": 23.9037, "lon": 119.6763, "type": "Chokepoint", "risk": "HIGH", "conf": 92},
-            {"name": "Port of Shanghai", "lat": 31.2304, "lon": 121.4737, "type": "Port", "risk": "MEDIUM", "conf": 85},
-            {"name": "Suez Canal", "lat": 30.5852, "lon": 32.3999, "type": "Chokepoint", "risk": "MEDIUM", "conf": 89},
-            {"name": "Rotterdam Hub", "lat": 51.9225, "lon": 4.47917, "type": "Port", "risk": "LOW", "conf": 99},
-            {"name": "Panama Canal", "lat": 9.1012, "lon": -79.6955, "type": "Chokepoint", "risk": "LOW", "conf": 95},
+            {"title": "Unverified Drone Activity", "loc": "Red Sea Sector 4", "severity": "CRITICAL", "cat": "Conflict", "time": "14m ago", "conf": 94},
+            {"title": "Typhoon Beryl Formation", "loc": "Philippine Sea", "severity": "HIGH", "cat": "Weather", "time": "42m ago", "conf": 88},
+            {"title": "Port Labor Strike Notice", "loc": "Hamburg Terminal", "severity": "MEDIUM", "cat": "Labor", "time": "2h ago", "conf": 76},
         ]
 
     @staticmethod
-    def get_intelligence_feed():
-        return [
-            {
-                "id": "EVT-2024-884",
-                "headline": "Naval Blockade Exercise Initiated",
-                "asset": "Taiwan Strait",
-                "category": "Conflict",
-                "severity": "CRITICAL",
-                "confidence": 98,
-                "timestamp": "T-minus 14m",
-                "source": "SIGINT / SAT",
-                "why": "Troop movement detected via SAR imagery; matched adversarial pattern #442."
-            },
-            {
-                "id": "EVT-2024-883",
-                "headline": "Severe Cyclone Formation",
-                "asset": "Bay of Bengal",
-                "category": "Weather",
-                "severity": "HIGH",
-                "confidence": 94,
-                "timestamp": "T-minus 42m",
-                "source": "NOAA / MET",
-                "why": "Pressure drop > 20hPa in 6 hours. Impact probable for Chennai port."
-            },
-            {
-                "id": "EVT-2024-882",
-                "headline": "Labor Strike Negotiation Stalled",
-                "asset": "Port of LA/LB",
-                "category": "Logistics",
-                "severity": "MEDIUM",
-                "confidence": 82,
-                "timestamp": "T-minus 2h",
-                "source": "OSINT / NEWS",
-                "why": "Union rep statement sentiment analysis negative (-0.8)."
-            },
-            {
-                "id": "EVT-2024-881",
-                "headline": "New Sanctions Protocol Active",
-                "asset": "Global",
-                "category": "Regulatory",
-                "severity": "LOW",
-                "confidence": 100,
-                "timestamp": "T-minus 5h",
-                "source": "GOV / FEED",
-                "why": "Official treasury release parsed."
-            }
-        ]
+    def generate_pdf_report():
+        """Generates a downloadable Intelligence Brief PDF."""
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        
+        # Header
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="AVELLON INTELLIGENCE BRIEF", ln=1, align='C')
+        pdf.set_font("Arial", size=10)
+        pdf.cell(200, 10, txt=f"Generated: {AvellonBackend.get_gmt_time()} | Classification: SECRET//NOFORN", ln=1, align='C')
+        pdf.ln(10)
+        
+        # Executive Summary
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(200, 10, txt="1. EXECUTIVE SUMMARY", ln=1, align='L')
+        pdf.set_font("Arial", size=11)
+        pdf.multi_cell(0, 10, txt="Global risk velocity has increased by 14% in the last 24 hours. Critical friction detected in the Red Sea corridor affecting EU-Asia logistics. Financial blast radius estimation for Tier-1 automotive sector is $45M/day.")
+        pdf.ln(5)
+        
+        # Risk Table
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(200, 10, txt="2. ACTIVE THREAT VECTORS", ln=1, align='L')
+        pdf.set_font("Arial", size=10)
+        for asset, data in GEO_ASSETS.items():
+            pdf.cell(0, 8, txt=f"- {asset}: {data['risk']} ({data['type']})", ln=1)
+            
+        return pdf.output(dest='S').encode('latin-1')
 
     @staticmethod
-    def get_analytics_data():
-        # Mock data for Altair charts
-        regions = ['APAC', 'EMEA', 'AMER', 'LATAM']
-        risks = [45, 30, 15, 10]
-        velocity = pd.DataFrame({
-            'time': pd.date_range(start='2024-01-01', periods=10, freq='H'),
-            'risk_score': [20, 22, 25, 24, 30, 45, 50, 65, 72, 72]
-        })
-        root_causes = pd.DataFrame({
-            'cause': ['Geopolitical', 'Climate', 'Cyber', 'Labor'],
-            'count': [40, 25, 20, 15]
-        })
-        return regions, risks, velocity, root_causes
-
-    @staticmethod
-    def get_logs():
-        return pd.DataFrame([
-            {"Timestamp": "10:42:01", "User": "ADMIN_01", "Action": "SIMULATION_RUN", "Target": "Taiwan_Semi"},
-            {"Timestamp": "10:38:15", "User": "AUTO_BOT", "Action": "ALERT_TRIGGER", "Target": "Strait_Malacca"},
-            {"Timestamp": "10:15:22", "User": "ANALYST_K", "Action": "CONFIDENCE_OVERRIDE", "Target": "EVT-882"},
-        ])
+    def ai_chat_response(query):
+        """Simulates a Risk-Aware AI Analyst."""
+        query = query.lower()
+        time_stamp = AvellonBackend.get_gmt_time()
+        
+        if "red sea" in query:
+            return f"[{time_stamp}] **ANALYSIS:** Red Sea transit volume is down 42% due to Houthi kinetic activity. Insurance premiums up 1500%. **BLAST RADIUS:** High impact on LNG exports to Europe."
+        elif "taiwan" in query:
+            return f"[{time_stamp}] **ANALYSIS:** PLA Navy activity in Taiwan Strait is nominal but elevated. Semiconductor supply chain risk is STABLE but watchlist status is HIGH."
+        elif "malacca" in query:
+            return f"[{time_stamp}] **ANALYSIS:** Strait of Malacca reports minor congestion. No kinetic threats detected. Efficiency at 92%."
+        elif "financial" in query or "blast radius" in query:
+            return f"[{time_stamp}] **CALCULATION:** Current geopolitical friction suggests a global aggregated financial blast radius of $2.4B/day in delayed inventory carrying costs."
+        else:
+            return f"[{time_stamp}] **SYSTEM:** Query received. Cross-referencing Satellite, Dark Web, and ERP sources. No immediate critical anomalies found for this specific vector."
 
 # -----------------------------------------------------------------------------
-# 3. COMPONENT RENDERING FUNCTIONS
+# 3. NAVIGATION & LAYOUT
+# -----------------------------------------------------------------------------
+def sidebar_nav():
+    st.sidebar.title("AVELLON")
+    st.sidebar.caption(f"TIME: {AvellonBackend.get_gmt_time()}")
+    st.sidebar.markdown("---")
+
+    if st.session_state['authenticated']:
+        st.sidebar.success(f"COMMANDER ACTIVE")
+        menu = ["Global War Room", "🛰️ Satellite Recon", "💬 AI Risk Analyst", "🏴‍☠️ Dark Web Intel", "🕸️ Digital Twin", "🔌 Developer API"]
+        selected = st.sidebar.radio("Modules", menu)
+        
+        st.sidebar.markdown("---")
+        if st.sidebar.button("Log Out"):
+            st.session_state['authenticated'] = False
+            st.session_state['page'] = 'Home'
+            st.rerun()
+        return selected
+    else:
+        menu = ["Home", "Platform", "Solutions", "About", "Contact"]
+        selected = st.sidebar.radio("Navigation", menu)
+        st.sidebar.markdown("---")
+        if st.sidebar.button("Secure Login"):
+            st.session_state['page'] = "Login"
+            st.rerun()
+        return selected
+
+# -----------------------------------------------------------------------------
+# 4. MODULE RENDERERS
 # -----------------------------------------------------------------------------
 
-def render_global_header():
-    metrics = SentinelBackend.get_global_metrics()
-    
-    # Top Bar Layout
-    c1, c2, c3, c4, c5, c6 = st.columns([1, 1, 1, 1, 1.5, 1])
-    
-    with c1:
-        st.metric("Global Risk Index", f"{metrics['risk_index']}", "+2.4%")
+# --- PUBLIC PAGES ---
+def render_home():
+    st.title("The Geometry of Risk.")
+    st.markdown(f"""
+    <div style='background-color: #161b22; padding: 30px; border-left: 5px solid #00d4ff; margin-bottom: 20px;'>
+        <h3 style='margin-top:0;'>Operational Pre-cognition.</h3>
+        <p style='color: #ccc;'>Current System Time: {AvellonBackend.get_gmt_time()}</p>
+        <p>Fusing Outside Data (Satellite, Dark Web) with Inside Data (ERP) to predict financial blast radius.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    c1.info("**PREDICTIVE**\n\nForecast financial impact days in advance.")
+    c2.info("**OMNISCIENT**\n\nSatellite & Dark Web fusion.")
+    c3.info("**AUTONOMOUS**\n\nSelf-healing supply chains.")
+
+def render_login():
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1,1,1])
     with c2:
-        st.metric("Active Critical", f"{metrics['critical_events']}", "Alerts")
-    with c3:
-        st.metric("Escalating Risks", f"{metrics['escalating']}", "Assets")
-    with c4:
-        st.metric("Stable Assets", f"{metrics['stable_pct']}%")
-    with c5:
-        st.markdown(f"**LAST REFRESH**<br><span style='color:#00d4ff'>{metrics['last_refresh']}</span>", unsafe_allow_html=True)
-    with c6:
-        st.markdown(f"**USER ROLE**<br><span style='color:#28a745'>{metrics['user_role']}</span>", unsafe_allow_html=True)
-    
-    st.markdown("---")
+        st.markdown("### SECURE CONSOLE")
+        u = st.text_input("Identity")
+        p = st.text_input("Keycode", type="password")
+        if st.button("Authenticate"):
+            if u and p: 
+                st.session_state['authenticated'] = True
+                st.rerun()
 
-def render_sidebar():
-    with st.sidebar:
-        st.title("COMMAND CONTROL")
-        st.markdown("---")
-        
-        # Mode Toggles
-        mode = st.radio("OPERATING MODE", ["🔴 LIVE MONITORING", "🔍 DEEP SCAN", "🔮 PREDICTIVE", "🎲 SIMULATION"])
-        
-        st.markdown("### FILTER PARAMETERS")
-        time_window = st.selectbox("TIME WINDOW", ["Last 1 Hour", "Last 24 Hours", "Last 7 Days", "Quarterly"])
-        threat_level = st.multiselect("THREAT LEVEL", ["CRITICAL", "HIGH", "MEDIUM", "LOW"], default=["CRITICAL", "HIGH"])
-        
-        st.markdown("### SOURCE CALIBRATION")
-        st.slider("MIN CONFIDENCE THRESHOLD", 0, 100, 80)
-        st.slider("SOURCE RELIABILITY WEIGHT", 0.0, 1.0, 0.8)
-        
-        st.markdown("### SCOPE")
-        st.selectbox("PRIMARY REGION", ["Global", "Indo-Pacific", "Euro-Atlantic", "Middle East"])
-        st.text_input("CUSTOM ASSET QUERY", placeholder="e.g. 'Semiconductor Supply Chain'")
-        
-        st.markdown("---")
-        st.info(f"System Status: ONLINE\nLatency: 42ms\nSecure Uplink: ACTIVE")
-
-def render_war_room_map():
-    assets = SentinelBackend.get_map_assets()
+# --- SECURE MODULES ---
+def render_war_room():
+    st.title("Global War Room (Live)")
+    st.caption("Integrated Satellite Layers: NASA GIBS / NOAA")
     
-    # Folium Map Setup
-    m = folium.Map(location=[20, 80], zoom_start=2, tiles="CartoDB dark_matter", width="100%", height="400px")
-    
-    risk_colors = {"CRITICAL": "red", "HIGH": "orange", "MEDIUM": "yellow", "LOW": "green"}
-    
-    for asset in assets:
-        color = risk_colors.get(asset["risk"], "grey")
+    # 1. Map with Satellite Layers
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        # Create Map centered on Global View
+        m = folium.Map(location=[20, 0], zoom_start=2, tiles=None) # Start with no default tiles to allow custom ones
         
-        # Asset Marker
-        folium.CircleMarker(
-            location=[asset["lat"], asset["lon"]],
-            radius=8 if asset["risk"] == "CRITICAL" else 5,
-            popup=f"<b>{asset['name']}</b><br>Risk: {asset['risk']}<br>Conf: {asset['conf']}%",
-            color=color,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.7
+        # Base Layer (Dark Matter for Tech Look)
+        folium.TileLayer('CartoDB dark_matter', name="Dark Mode (Tactical)").add_to(m)
+        
+        # LAYER 1: NASA GIBS (Terra MODIS) - True Color
+        # Note: We use a specific date or 'best' available. For robust code we use a fixed template url.
+        folium.TileLayer(
+            tiles='https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/2024-05-20/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
+            attr='NASA GIBS',
+            name='NASA Satellite (Optical)',
+            overlay=True,
+            control=True,
+            opacity=0.6
         ).add_to(m)
         
-        # Simulated Pulse for Critical
-        if asset["risk"] == "CRITICAL":
-            folium.Circle(
-                location=[asset["lat"], asset["lon"]],
-                radius=500000,
-                color=color,
-                weight=1,
-                fill=True,
-                fill_opacity=0.1
-            ).add_to(m)
+        # LAYER 2: Weather / Clouds (OpenWeatherMap standard layer often used, or NOAA proxy)
+        # Using a reliable free cloud layer
+        folium.TileLayer(
+            tiles='https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=YOUR_API_KEY_HERE', # Placeholder logic, usually requires key. 
+            # Switching to a generic functional overlay for demo without key:
+            # Stamen Toner is deprecated, sticking to reliable overlays.
+            attr='Weather Data',
+            name='Cloud Cover (Live)',
+            overlay=True,
+            control=True,
+            opacity=0.4
+        ).add_to(m)
 
-    st_folium(m, height=400, use_container_width=True)
+        # Asset Markers
+        for n, d in GEO_ASSETS.items():
+            color = "red" if d['risk'] == "CRITICAL" else "orange" if d['risk'] == "HIGH" else "blue"
+            # Pulsing effect for critical
+            if d['risk'] == "CRITICAL":
+                folium.Circle(
+                    location=d['coords'], radius=500000, color=color, fill=True, fill_opacity=0.2
+                ).add_to(m)
+            folium.Marker(d['coords'], popup=f"{n} ({d['risk']})", icon=folium.Icon(color=color, icon="info-sign")).add_to(m)
+            
+        folium.LayerControl().add_to(m)
+        st_folium(m, height=500, use_container_width=True)
 
-def render_intelligence_feed():
-    st.subheader("INTELLIGENCE STREAM")
-    events = SentinelBackend.get_intelligence_feed()
-    
-    for evt in events:
-        badge_class = f"badge-{evt['severity'].lower()}"
+    # 2. Intel Feed & PDF Export
+    with c2:
+        st.subheader("Intelligence Stream")
         
-        with st.expander(f"{evt['headline']}"):
-            # Header Line
+        # Download Button
+        pdf_bytes = AvellonBackend.generate_pdf_report()
+        st.download_button(
+            label="📄 Download Intel Brief (PDF)",
+            data=pdf_bytes,
+            file_name=f"Avellon_Brief_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf"
+        )
+        
+        st.markdown("---")
+        for item in AvellonBackend.get_intel_feed():
             st.markdown(f"""
-            <div style='display: flex; justify-content: space-between; align-items: center;'>
-                <span class='{badge_class}'>{evt['severity']}</span>
-                <span style='color: #888; font-size: 0.8rem;'>{evt['timestamp']}</span>
+            <div class='css-card'>
+                <span class='badge-{item['severity'].lower()}'>{item['severity']}</span>
+                <b>{item['title']}</b><br>
+                <span style='font-size:0.8rem; color:#aaa'>{item['loc']}</span>
             </div>
             """, unsafe_allow_html=True)
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(f"**Asset:** {evt['asset']}")
-                st.markdown(f"**Category:** {evt['category']}")
-            with c2:
-                st.markdown(f"**Confidence:** {evt['confidence']}%")
-                st.markdown(f"**Source:** {evt['source']}")
-                
-            st.markdown(f"**Analysis:** {evt['why']}")
-            st.button("ACTION: INITIATE RESPONSE", key=evt['id'])
 
-def render_analytics_tabs():
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 ANALYTICS", 
-        "🕸️ DIGITAL TWIN", 
-        "🎲 SIMULATION", 
-        "🔔 ALERTING", 
-        "🕵️ ANALYST", 
-        "📜 LOGS"
-    ])
+def render_chat():
+    st.title("AI Risk Analyst")
+    st.caption("Ask about any location, threat vector, or financial blast radius.")
     
-    # 1. Analytics Tab
-    with tab1:
-        st.markdown("#### RISK VELOCITY & ROOT CAUSE")
-        _, _, velocity_df, cause_df = SentinelBackend.get_analytics_data()
+    # Display History
+    for msg in st.session_state['chat_history']:
+        role_class = "chat-user" if msg['role'] == "user" else "chat-ai"
+        st.markdown(f"<div class='chat-message {role_class}'><b>{msg['role'].upper()}:</b> {msg['content']}</div>", unsafe_allow_html=True)
+    
+    # Input
+    user_input = st.chat_input("Query Avellon Intelligence...")
+    if user_input:
+        # User Msg
+        st.session_state['chat_history'].append({"role": "user", "content": user_input})
         
-        c1, c2 = st.columns(2)
-        with c1:
-            line_chart = alt.Chart(velocity_df).mark_line(color='#00d4ff').encode(
-                x='time', y='risk_score'
-            ).properties(height=200)
-            st.altair_chart(line_chart, use_container_width=True)
-        with c2:
-            donut = alt.Chart(cause_df).mark_arc(innerRadius=50).encode(
-                theta='count', color='cause'
-            ).properties(height=200)
-            st.altair_chart(donut, use_container_width=True)
-            
-    # 2. Digital Twin Tab (Graphviz)
-    with tab2:
-        st.markdown("#### SUPPLY CHAIN DEPENDENCY GRAPH")
-        graph = graphviz.Digraph()
-        graph.attr(rankdir='LR', bgcolor='transparent')
-        graph.attr('node', shape='box', style='filled', color='white', fontname='Roboto')
+        # AI Logic
+        with st.spinner("Analyzing Satellite & Dark Web data..."):
+            time.sleep(1) # Thinking time
+            response = AvellonBackend.ai_chat_response(user_input)
+            st.session_state['chat_history'].append({"role": "Avellon", "content": response})
         
-        graph.node('A', 'Taiwan Semi (TSMC)', fillcolor='#ffcccc') # Critical
-        graph.node('B', 'Assembly (Foxconn)', fillcolor='#ffffcc')
-        graph.node('C', 'Logistics (Evergreen)', fillcolor='#ffffcc')
-        graph.node('D', 'OEM (Apple)', fillcolor='#ccffcc')
-        graph.node('E', 'Defense (Raytheon)', fillcolor='#ffcccc') # Critical
-        
-        graph.edge('A', 'B', label='Chip Supply')
-        graph.edge('B', 'C', label='Finished Goods')
-        graph.edge('C', 'D', label='Consumer')
-        graph.edge('A', 'E', label='Mil-Spec')
-        
-        st.graphviz_chart(graph)
-        st.caption("🔴 Critical Node Exposure Detected in Upstream Tier-1")
+        st.rerun()
 
-    # 3. Simulation Tab
-    with tab3:
-        st.markdown("#### SCENARIO: STRAIT BLOCKADE (7 DAYS)")
-        
-        col_sim1, col_sim2 = st.columns(2)
-        with col_sim1:
-            duration = st.slider("Disruption Duration (Days)", 1, 30, 7)
-            severity = st.select_slider("Blockade Severity", options=["Partial", "Significant", "Total"])
-        
-        with col_sim2:
-            st.metric("Projected Revenue Risk", f"${duration * 12.5}M", "High Confidence")
-            st.metric("Inventory Coverage", f"{max(0, 14 - duration)} Days", "-40%")
-            
-        st.progress(min(100, duration * 3))
-        st.caption("Probability of cascading failure: 84%")
+def render_digital_twin():
+    st.title("Digital Twin: Financial Blast Radius")
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### Outside Data (Geopolitics)")
+        st.error("⚠️ Red Sea: Kinetic Activity (Critical)")
+        st.warning("⚠️ Panama: Drought (High)")
+    with c2:
+        st.markdown("#### Inside Data (ERP/Inventory)")
+        st.metric("Inventory Impact", "-14 Days Coverage", delta_color="inverse")
+        st.metric("Financial Blast Radius", "$2.4M / Day", "Escalating")
+    
+    # Graph
+    graph = graphviz.Digraph()
+    graph.attr(bgcolor='transparent', rankdir='LR')
+    graph.node('A', 'Geopolitical Event (Red Sea)', fillcolor='#7f1d1d', style='filled', fontcolor='white')
+    graph.node('B', 'Logistics Delay (+14 Days)', fillcolor='#c2410c', style='filled', fontcolor='white')
+    graph.node('C', 'ERP: Stockout Alert', fillcolor='#c2410c', style='filled', fontcolor='white')
+    graph.node('D', 'Financial Loss', fillcolor='#7f1d1d', style='filled', fontcolor='white')
+    
+    graph.edge('A', 'B')
+    graph.edge('B', 'C')
+    graph.edge('C', 'D')
+    st.graphviz_chart(graph)
 
-    # 4. Alerting Tab
-    with tab4:
-        st.markdown("#### ESCALATION RULES")
-        st.text_input("Rule Name", value="Tier-1 Supplier Critical Event")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.number_input("Confidence Threshold >", value=90)
-        with c2:
-            st.multiselect("Channels", ["Email", "Slack", "PagerDuty"], default=["Slack", "PagerDuty"])
-        st.toggle("Require Human-in-the-Loop Approval", value=True)
-        st.button("Save Rule Configuration")
+def render_satellite_recon():
+    st.title("Satellite Reconnaissance (Computer Vision)")
+    st.info("Live feed analysis from Sentinel-2 / Landsat Sources")
+    target = st.selectbox("Target Sector", ["Red Sea", "Taiwan Strait", "Ukraine Border"])
+    if st.button("Analyze Imagery"):
+        with st.spinner("Processing Optical Feed..."):
+            time.sleep(2)
+            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Strait_of_Malacca.jpg/1200px-Strait_of_Malacca.jpg", caption="Simulated Feed: Object Detection Active")
+            st.success("Analysis Complete: 14 Commercial Vessels, 2 Naval Assets detected.")
 
-    # 5. Analyst Workbench
-    with tab5:
-        st.markdown("#### PENDING REVIEW QUEUE")
-        cols = st.columns([3, 1, 1])
-        cols[0].markdown("**Event: Unverified Drone Sighting (Red Sea)**")
-        cols[1].button("✅ APPROVE", type="primary")
-        cols[2].button("❌ DISMISS")
-        st.text_area("Analyst Annotation", placeholder="Add context...")
+def render_dark_web():
+    st.title("Dark Web Monitor")
+    st.caption("Scanning TOR / I2P Networks")
+    st.dataframe(pd.DataFrame([
+        {"Source": "LockBit", "Threat": "Ransomware chatter targeting Logistics", "Risk": "HIGH"},
+        {"Source": "BreachForums", "Threat": "Database sale: Port Credentials", "Risk": "CRITICAL"}
+    ]), use_container_width=True)
 
-    # 6. Audit Logs
-    with tab6:
-        st.markdown("#### SYSTEM AUDIT TRAIL")
-        logs = SentinelBackend.get_logs()
-        st.dataframe(logs, use_container_width=True, hide_index=True)
-        st.download_button("Export Compliance Report (PDF)", "report", "application/pdf")
-
-def render_footer():
-    st.markdown("---")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.caption("🔒 DATA ACCESS: LEVEL 5 (TOP SECRET)")
-    with c2: st.caption("🔑 API KEY: sk_live_...94x")
-    with c3: st.caption("📡 MODEL STATUS: OPERATIONAL")
-    with c4: st.caption("🏥 SYSTEM HEALTH: 99.99% UPTIME")
+def render_api():
+    st.title("Developer API")
+    st.code(f"sk_live_{uuid.uuid4().hex[:24]}", language="bash")
 
 # -----------------------------------------------------------------------------
-# 4. MAIN APPLICATION ORCHESTRATION
+# 5. MAIN ROUTER
 # -----------------------------------------------------------------------------
-def main():
-    # 1. Header
-    render_global_header()
-    
-    # 2. Sidebar Controls
-    render_sidebar()
-    
-    # 3. War Room Map (Row 1)
-    st.markdown("### 🗺️ WAR ROOM: ACTIVE THEATER")
-    render_war_room_map()
-    
-    # 4. Split Layout (Row 2)
-    col_left, col_right = st.columns([1, 1.5])
-    
-    with col_left:
-        render_intelligence_feed()
-        
-    with col_right:
-        render_analytics_tabs()
-        
-    # 5. Footer
-    render_footer()
+selection = sidebar_nav()
 
-if __name__ == "__main__":
-    main()
+if not st.session_state['authenticated']:
+    if selection == "Home": render_home()
+    elif selection == "Login": render_login()
+    else: st.info("Please login to access " + selection)
+else:
+    if selection == "Global War Room": render_war_room()
+    elif selection == "💬 AI Risk Analyst": render_chat()
+    elif selection == "🛰️ Satellite Recon": render_satellite_recon()
+    elif selection == "🏴‍☠️ Dark Web Intel": render_dark_web()
+    elif selection == "🕸️ Digital Twin": render_digital_twin()
+    elif selection == "🔌 Developer API": render_api()
+
+st.markdown("<div class='footer'>AVELLON INTELLIGENCE © 2026 | ISO 27001 Certified</div>", unsafe_allow_html=True)
