@@ -34,72 +34,167 @@ if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
 # -----------------------------------------------------------------------------
-# 2. STYLING (PHASE 2 HUD + GLOBAL STYLES)
+# 2. STYLING (RE-ENGINEERED FOR ENTERPRISE HEADER)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
+    /* CSS VARIABLES */
     :root {
         --bg-color: #0d1117;
-        --card-bg: #161b22;
-        --surface-hover: #1f2937;
+        --panel-bg: #161b22;
         --border-color: #30363d;
-        --accent-primary: #58a6ff;
-        --accent-danger: #f85149;
-        --accent-warning: #d29922;
-        --accent-success: #3fb950;
+        --accent-blue: #58a6ff;
+        --accent-red: #f85149;
+        --accent-gold: #d29922;
+        --accent-green: #3fb950;
         --text-primary: #f0f6fc;
         --text-secondary: #8b949e;
         --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     }
 
+    /* APP DEFAULTS */
     .stApp {
         background-color: var(--bg-color);
         color: var(--text-primary);
-        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* HUD Header Styling */
-    .hud-container {
+    /* -------------------------------------------
+       NEW ENTERPRISE HEADER STYLES
+       ------------------------------------------- */
+    
+    /* The Main Container Bar */
+    .header-container {
+        background-color: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 16px 24px;
+        margin-bottom: 24px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 20px;
-        border-bottom: 1px solid var(--border-color);
-        padding-bottom: 15px;
-        background: linear-gradient(180deg, rgba(22,27,34,0.6) 0%, rgba(13,17,23,0) 100%);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .hud-title-section { display: flex; align-items: center; gap: 15px; }
-    .hud-logo { font-size: 28px; }
-    .hud-text-group { display: flex; flex-direction: column; }
-    .hud-main-title { font-weight: 700; font-size: 20px; letter-spacing: 1.2px; color: var(--text-primary); }
-    .hud-subtitle { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); display: flex; align-items: center; gap: 6px; }
 
-    /* Live Pulse Animation */
+    /* Left Side: Branding */
+    .brand-section {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+    
+    .brand-logo {
+        font-size: 32px;
+        filter: drop-shadow(0 0 10px rgba(88, 166, 255, 0.3));
+    }
+    
+    .brand-text-group {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    .brand-title {
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        color: var(--text-primary);
+        line-height: 1.1;
+    }
+    
+    .os-badge {
+        font-size: 10px;
+        background: var(--accent-blue);
+        color: #000;
+        padding: 1px 4px;
+        border-radius: 3px;
+        margin-left: 6px;
+        vertical-align: middle;
+        font-weight: 700;
+    }
+    
+    .brand-subtitle {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-secondary);
+        margin-top: 4px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Pulsing Live Dot */
     @keyframes pulse-red {
         0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); }
         70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }
         100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
     }
-    .status-dot {
-        height: 8px; width: 8px; background-color: var(--accent-danger);
-        border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite;
+    .live-dot {
+        height: 6px; 
+        width: 6px; 
+        background-color: var(--accent-red);
+        border-radius: 50%; 
+        display: inline-block; 
+        animation: pulse-red 2s infinite;
     }
 
-    /* Metric Group Styling */
-    .hud-metrics { display: flex; gap: 40px; align-items: center; }
-    .hud-metric-box { text-align: right; }
-    .hud-metric-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-    .hud-metric-value { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 600; margin-top: 2px; }
+    /* Right Side: Metrics Cluster */
+    .metrics-section {
+        display: flex;
+        align-items: center;
+        gap: 0px; /* Spacing handled by padding */
+    }
 
-    /* Badges */
-    .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
-    .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-danger); border: 1px solid var(--accent-danger); }
-    .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-warning); border: 1px solid var(--accent-warning); }
-    .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-primary); border: 1px solid var(--accent-primary); }
-    .badge-low { background: rgba(63, 185, 80, 0.2); color: var(--accent-success); border: 1px solid var(--accent-success); }
+    /* Individual Metric Box */
+    .metric-box {
+        padding: 0 24px;
+        border-right: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+    }
     
+    .metric-box:last-child {
+        border-right: none;
+        padding-right: 0;
+    }
+
+    .metric-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-secondary);
+        margin-bottom: 2px;
+    }
+    
+    .metric-value {
+        font-family: 'Segoe UI', sans-serif;
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    
+    .metric-delta {
+        font-size: 12px;
+        font-weight: 500;
+        margin-left: 6px;
+    }
+
+    /* Utility Colors */
+    .color-red { color: var(--accent-red) !important; }
+    .color-gold { color: var(--accent-gold) !important; }
+    .color-green { color: var(--accent-green) !important; }
+    .color-blue { color: var(--accent-blue) !important; }
+
+    /* Other UI Elements */
     .block-container { padding-top: 1.5rem; }
     hr { border-color: var(--border-color) !important; }
+    
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
+    .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
+    .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
+    .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -205,48 +300,51 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 4. RENDER FUNCTIONS (FIXED HUD INDENTATION)
+# 4. RENDER FUNCTIONS (FIXED HEADER WITH ZERO INDENTATION)
 # -----------------------------------------------------------------------------
 
 def render_enterprise_header():
     """Renders the Phase 2 Professional HUD Header."""
     metrics = EnterpriseBackend.get_global_metrics()
     
-    # We use dedented HTML to prevent Markdown code-block interpretation
-    st.markdown(f"""
-<div class="hud-container">
-<div class="hud-title-section">
-<div class="hud-logo">🛡️</div>
-<div class="hud-text-group">
-<div class="hud-main-title">AVELLON | OS</div>
-<div class="hud-subtitle">
-<span class="status-dot"></span>
-LIVE FEED • {metrics['last_refresh']}
+    # ⚠️ IMPORTANT: We use a raw HTML string with NO indentation for the inner content
+    # to prevent Streamlit/Markdown from interpreting it as a code block.
+    
+    header_html = f"""
+<div class="header-container">
+    <div class="brand-section">
+        <div class="brand-logo">🛡️</div>
+        <div class="brand-text-group">
+            <div class="brand-title">AVELLON <span class="os-badge">OS</span></div>
+            <div class="brand-subtitle">
+                <span class="live-dot"></span> 
+                LIVE FEED • {metrics['last_refresh']}
+            </div>
+        </div>
+    </div>
+    <div class="metrics-section">
+        <div class="metric-box">
+            <div class="metric-label">GLOBAL RISK</div>
+            <div class="metric-value {'color-red' if float(metrics['risk_index']) > 70 else 'color-blue'}">
+                {metrics['risk_index']} <span class="metric-delta" style="color:#8b949e">{metrics['risk_delta']}</span>
+            </div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">ACTIVE ALERTS</div>
+            <div class="metric-value color-gold">{metrics['critical_events']}</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">LATENCY</div>
+            <div class="metric-value color-green">{metrics['latency']}</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">OPERATOR</div>
+            <div class="metric-value" style="font-size:16px; margin-top:5px;">{metrics['user_role']}</div>
+        </div>
+    </div>
 </div>
-</div>
-</div>
-<div class="hud-metrics">
-<div class="hud-metric-box">
-<div class="hud-metric-label">Global Risk Index</div>
-<div class="hud-metric-value" style="color: {'var(--accent-danger)' if float(metrics['risk_index']) > 70 else 'var(--accent-primary)'}">
-{metrics['risk_index']} <span style="font-size:14px; color:var(--text-secondary)">{metrics['risk_delta']}</span>
-</div>
-</div>
-<div class="hud-metric-box">
-<div class="hud-metric-label">Active Alerts</div>
-<div class="hud-metric-value" style="color: var(--accent-warning)">{metrics['critical_events']}</div>
-</div>
-<div class="hud-metric-box">
-<div class="hud-metric-label">System Latency</div>
-<div class="hud-metric-value" style="color: var(--accent-success)">{metrics['latency']}</div>
-</div>
-<div class="hud-metric-box">
-<div class="hud-metric-label">Role</div>
-<div class="hud-metric-value" style="font-size: 16px; color: var(--text-primary); margin-top:8px;">{metrics['user_role']}</div>
-</div>
-</div>
-</div>
-""", unsafe_allow_html=True)
+"""
+    st.markdown(header_html, unsafe_allow_html=True)
 
 def render_sidebar():
     with st.sidebar:
