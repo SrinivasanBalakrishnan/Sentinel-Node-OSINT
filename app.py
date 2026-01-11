@@ -11,7 +11,7 @@ import time
 from fpdf import FPDF
 
 # -----------------------------------------------------------------------------
-# 1. ENTERPRISE CONFIGURATION & SESSION STATE
+# 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="AVELLON | Global Risk OS",
@@ -20,7 +20,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Session State
+# -----------------------------------------------------------------------------
+# 2. SESSION STATE INITIALIZATION
+# -----------------------------------------------------------------------------
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
 if 'system_state' not in st.session_state:
     st.session_state['system_state'] = {
         'risk_index': 72.4,
@@ -29,15 +34,16 @@ if 'system_state' not in st.session_state:
         'chat_history': [],
         'last_update': datetime.now(timezone.utc)
     }
+
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
 # -----------------------------------------------------------------------------
-# 2. STYLING (ENTERPRISE HUD + DARK THEME)
+# 3. GLOBAL STYLING (THEMES & ANIMATIONS)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    /* VARIABLES */
+    /* GLOBAL VARIABLES */
     :root {
         --bg-color: #0d1117;
         --panel-bg: #161b22;
@@ -57,7 +63,46 @@ st.markdown("""
         font-family: 'Segoe UI', system-ui, sans-serif;
     }
 
-    /* ENTERPRISE HUD HEADER */
+    /* --------------------------------------------------
+       LOGIN PAGE ANIMATION (Cyber Grid)
+       -------------------------------------------------- */
+    .login-bg {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #05090f;
+        background-image: 
+            linear-gradient(rgba(88, 166, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(88, 166, 255, 0.1) 1px, transparent 1px);
+        background-size: 40px 40px;
+        z-index: -1;
+        animation: grid-move 20s linear infinite;
+    }
+    
+    @keyframes grid-move {
+        0% { background-position: 0 0; }
+        100% { background-position: 40px 40px; }
+    }
+
+    /* Glassmorphism Login Card */
+    .login-card {
+        background: rgba(22, 27, 34, 0.75);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(88, 166, 255, 0.3);
+        border-radius: 12px;
+        padding: 40px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        text-align: center;
+        max-width: 400px;
+        margin: auto;
+    }
+
+    /* --------------------------------------------------
+       DASHBOARD STYLING
+       -------------------------------------------------- */
     .header-container {
         background-color: var(--panel-bg);
         border: 1px solid var(--border-color);
@@ -75,7 +120,6 @@ st.markdown("""
     .os-badge { font-size: 10px; background: var(--accent-blue); color: #000; padding: 1px 4px; border-radius: 3px; margin-left: 6px; font-weight: 700; vertical-align: middle; }
     .brand-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
     
-    /* Metrics Cluster */
     .metrics-section { display: flex; gap: 0px; }
     .metric-box { padding: 0 24px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: flex-end; }
     .metric-box:last-child { border-right: none; padding-right: 0; }
@@ -83,7 +127,6 @@ st.markdown("""
     .metric-value { font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: 600; color: var(--text-primary); }
     .metric-delta { font-size: 12px; font-weight: 500; margin-left: 6px; }
 
-    /* Live Pulse */
     @keyframes pulse-red {
         0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); }
         70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }
@@ -91,45 +134,41 @@ st.markdown("""
     }
     .live-dot { height: 6px; width: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite; margin-right: 5px; }
 
-    /* CUSTOM DOWNLOAD BUTTON STYLING */
+    /* Buttons */
     div.stButton > button[kind="primary"] {
         background-color: #1f2937;
         color: var(--accent-blue);
         border: 1px solid var(--accent-blue);
         border-radius: 6px;
         font-weight: 600;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
         width: 100%;
         text-transform: uppercase;
-        font-size: 0.85rem;
     }
     div.stButton > button[kind="primary"]:hover {
         background-color: var(--accent-blue);
         color: #000;
         box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
-        border-color: var(--accent-blue);
     }
 
-    /* Utility Colors */
+    /* Utility */
     .color-red { color: var(--accent-red) !important; }
     .color-gold { color: var(--accent-gold) !important; }
     .color-green { color: var(--accent-green) !important; }
     .color-blue { color: var(--accent-blue) !important; }
+    
+    .block-container { padding-top: 1.5rem; }
+    hr { border-color: var(--border-color) !important; }
 
-    /* Components */
+    /* Badges */
     .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
     .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
     .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
     .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
-    
-    .block-container { padding-top: 1.5rem; }
-    hr { border-color: var(--border-color) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. BACKEND (DYNAMIC SIMULATION)
+# 4. BACKEND LOGIC
 # -----------------------------------------------------------------------------
 class EnterpriseBackend:
     @staticmethod
@@ -196,14 +235,9 @@ class EnterpriseBackend:
 
     @staticmethod
     def generate_pdf_brief():
-        """
-        Generates an Enterprise-Grade PDF with Financial Insights.
-        Includes fix for underline overlap by using dynamic Y positioning.
-        """
         pdf = FPDF()
         pdf.add_page()
         
-        # Header
         pdf.set_font("Arial", 'B', 16)
         pdf.set_text_color(40, 40, 40)
         pdf.cell(0, 10, txt="AVELLON | INTELLIGENCE & RISK ASSESSMENT", ln=1, align='L')
@@ -212,12 +246,10 @@ class EnterpriseBackend:
         pdf.set_text_color(100, 100, 100)
         pdf.cell(0, 10, txt=f"Report Generated: {EnterpriseBackend.get_system_time()} | CLASSIFICATION: SECRET//NOFORN", ln=1, align='L')
         
-        # FIX: Draw line at current Y position to prevent strikethrough effect
         y_pos = pdf.get_y()
         pdf.line(10, y_pos, 200, y_pos)
         pdf.ln(10)
 
-        # 1. Executive Summary
         pdf.set_font("Arial", 'B', 12)
         pdf.set_text_color(0, 0, 0)
         pdf.cell(0, 10, txt="1. EXECUTIVE SITUATION REPORT", ln=1, align='L')
@@ -225,11 +257,10 @@ class EnterpriseBackend:
         pdf.multi_cell(0, 6, txt="Current global risk velocity has accelerated by 14% week-over-week. Critical friction points in the Red Sea and Taiwan Strait are creating significant supply chain latency. Immediate mitigation protocols are recommended for Tier-1 suppliers.")
         pdf.ln(5)
 
-        # 2. Financial Impact Assessment
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 10, txt="2. FINANCIAL IMPACT PROJECTIONS", ln=1, align='L')
         
-        pdf.set_font("Courier", size=10) # Monospace for data
+        pdf.set_font("Courier", size=10) 
         pdf.set_fill_color(240, 240, 240)
         
         financials = [
@@ -247,7 +278,6 @@ class EnterpriseBackend:
             
         pdf.ln(5)
 
-        # 3. Active Threat Vectors
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 10, txt="3. CRITICAL ASSET MONITORING", ln=1, align='L')
         pdf.set_font("Arial", size=10)
@@ -255,10 +285,10 @@ class EnterpriseBackend:
         assets = EnterpriseBackend.get_map_assets()
         for asset in assets:
             if asset['risk'] in ['CRITICAL', 'HIGH']:
-                pdf.set_text_color(200, 0, 0) # Red for high risk
+                pdf.set_text_color(200, 0, 0) 
                 status = f"[{asset['risk']}]"
             else:
-                pdf.set_text_color(0, 100, 0) # Green for low
+                pdf.set_text_color(0, 100, 0)
                 status = f"[{asset['risk']}]"
                 
             pdf.cell(40, 8, txt=status, border=0)
@@ -281,11 +311,43 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 4. RENDER FUNCTIONS
+# 5. UI COMPONENTS
 # -----------------------------------------------------------------------------
 
+def render_login_page():
+    # Background Animation Div
+    st.markdown('<div class="login-bg"></div>', unsafe_allow_html=True)
+    
+    # Spacing to center the card vertically
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
+    
+    # Center Column
+    c1, c2, c3 = st.columns([1, 1, 1])
+    
+    with c2:
+        st.markdown("""
+        <div class="login-card">
+            <h1 style="color:white; margin-bottom:10px;">🛡️ AVELLON</h1>
+            <p style="color:#8b949e; font-size:14px; margin-bottom:20px;">GLOBAL RISK OPERATING SYSTEM</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            user = st.text_input("Identity ID", placeholder="Enter Command ID")
+            pwd = st.text_input("Access Key", placeholder="Enter Password", type="password")
+            
+            submitted = st.form_submit_button("AUTHENTICATE ACCESS", type="primary")
+            
+            if submitted:
+                if user == "Admin" and pwd == "Arun@123":
+                    st.session_state['authenticated'] = True
+                    st.toast("Access Granted. Initializing System...", icon="🔓")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("ACCESS DENIED: Invalid Credentials")
+
 def render_enterprise_header():
-    """Renders the Professional HUD Header."""
     metrics = EnterpriseBackend.get_global_metrics()
     
     header_html = f"""
@@ -337,6 +399,10 @@ def render_sidebar():
         st.checkbox("Show Weather Layers", value=True)
         st.checkbox("Show Naval Assets", value=False)
         st.markdown("---")
+        if st.button("LOGOUT"):
+            st.session_state['authenticated'] = False
+            st.rerun()
+        st.markdown("---")
         st.info("System Status: **ONLINE**")
 
 def render_map_section():
@@ -344,7 +410,6 @@ def render_map_section():
     m = folium.Map(location=[20, 80], zoom_start=2, tiles=None)
     folium.TileLayer('CartoDB dark_matter', name="Dark").add_to(m)
     
-    # NASA GIBS
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     folium.TileLayer(
         tiles=f'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{today}/GoogleMapsCompatible_Level9/{{z}}/{{y}}/{{x}}.jpg',
@@ -354,7 +419,6 @@ def render_map_section():
     for a in EnterpriseBackend.get_map_assets():
         c = {"CRITICAL": "#f85149", "HIGH": "#d29922", "MEDIUM": "#58a6ff", "LOW": "#3fb950"}.get(a['risk'])
         
-        # HTML Tooltip
         tooltip = f"""
         <div style='font-family:sans-serif; padding:5px;'>
             <b>{a['name']}</b><br>
@@ -370,20 +434,18 @@ def render_map_section():
     st_folium(m, height=420, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# 5. MAIN EXECUTION
+# 6. MAIN APPLICATION LOGIC
 # -----------------------------------------------------------------------------
-def main():
+def main_dashboard():
     render_enterprise_header()
     render_sidebar()
     
-    # Layout
     c_map, c_feed = st.columns([2.1, 1.2])
     
     with c_map:
         render_map_section()
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # TABS
         t1, t2, t3, t4, t5 = st.tabs(["📊 ANALYTICS", "💬 AI ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION", "📜 LOGS"])
         
         with t1:
@@ -401,12 +463,10 @@ def main():
                 
         with t2:
             st.markdown("#### 💬 AI FUSION ANALYST (Multi-INT)")
-            # Chat Interface
             cnt = st.container(height=300)
             with cnt:
                 for msg in st.session_state['chat_history']:
                     st.chat_message(msg['role']).write(msg['content'])
-            
             q = st.chat_input("Ask about global assets, financial impact, or weather patterns...")
             if q:
                 st.session_state['chat_history'].append({"role": "user", "content": q})
@@ -418,7 +478,6 @@ def main():
 
         with t3:
             st.markdown("#### SUPPLY CHAIN DIGITAL TWIN")
-            # Graphviz Graph
             g = graphviz.Digraph()
             g.attr(rankdir='LR', bgcolor='transparent')
             g.attr('node', shape='box', style='filled', color='white', fontname='Sans-Serif')
@@ -442,8 +501,6 @@ def main():
             
     with c_feed:
         st.subheader("📡 INTEL FEED")
-        
-        # Download Button
         pdf_bytes = EnterpriseBackend.generate_pdf_brief()
         st.download_button(
             label="DOWNLOAD INTELLIGENCE BRIEF",
@@ -454,7 +511,6 @@ def main():
             use_container_width=True
         )
         st.markdown("<br>", unsafe_allow_html=True)
-
         for i in EnterpriseBackend.get_intelligence_feed():
             b_cls = f"badge badge-{i['severity'].lower()}"
             with st.expander(f"{i['headline']}"):
@@ -464,7 +520,6 @@ def main():
                 if st.button("ACTIVATE PROTOCOL", key=i['id']):
                     st.toast(f"Protocol initiated for {i['id']}", icon="⚡")
 
-    # Footer
     st.markdown("---")
     fc1, fc2, fc3, fc4 = st.columns(4)
     with fc1: st.caption("🔒 DATA ACCESS: LEVEL 5 (TOP SECRET)")
@@ -473,4 +528,7 @@ def main():
     with fc4: st.caption("🏥 HEALTH: 99.99% UPTIME")
 
 if __name__ == "__main__":
-    main()
+    if st.session_state['authenticated']:
+        main_dashboard()
+    else:
+        render_login_page()
