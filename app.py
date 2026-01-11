@@ -11,7 +11,7 @@ import time
 from fpdf import FPDF
 
 # -----------------------------------------------------------------------------
-# PAGE CONFIG & BASIC STYLING
+# 1. ENTERPRISE CONFIGURATION & SESSION STATE
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="AVELLON | Global Risk OS",
@@ -20,120 +20,123 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Modern dark theme with better structure + CSS variables
+# Initialize Session State for Dynamic Data
+if 'system_state' not in st.session_state:
+    st.session_state['system_state'] = {
+        'risk_index': 72.4,
+        'risk_history': [70, 71, 72, 72.4],
+        'active_alerts': 3,
+        'chat_history': [],
+        'last_update': datetime.now(timezone.utc)
+    }
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = []
+
+# -----------------------------------------------------------------------------
+# 2. STYLING (ENTERPRISE HUD + DARK THEME)
+# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
+    /* VARIABLES */
     :root {
-        --bg: #0d1117;
-        --surface: #161b22;
-        --surface-hover: #1f2937;
-        --text-primary: #e6edf3;
+        --bg-color: #0d1117;
+        --panel-bg: #161b22;
+        --border-color: #30363d;
+        --accent-blue: #58a6ff;
+        --accent-red: #f85149;
+        --accent-gold: #d29922;
+        --accent-green: #3fb950;
+        --text-primary: #f0f6fc;
         --text-secondary: #8b949e;
-        --accent: #58a6ff;
-        --critical: #f85149;
-        --high: #f0883e;
-        --medium: #d2a241;
-        --low: #3fb950;
-        --border: #30363d;
+        --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     }
 
     .stApp {
-        background-color: var(--bg);
+        background-color: var(--bg-color);
         color: var(--text-primary);
-        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        font-family: 'Segoe UI', system-ui, sans-serif;
     }
 
-    /* Cards */
-    .card {
-        background: var(--surface);
-        border-radius: 10px;
-        border: 1px solid var(--border);
-        padding: 1.4rem;
-        margin-bottom: 1.2rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-        transition: all 0.2s ease;
+    /* ENTERPRISE HUD HEADER */
+    .header-container {
+        background-color: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 16px 24px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .card:hover {
-        background: var(--surface-hover);
-        transform: translateY(-2px);
-    }
+    .brand-section { display: flex; align-items: center; gap: 16px; }
+    .brand-logo { font-size: 32px; }
+    .brand-title { font-size: 20px; font-weight: 800; letter-spacing: 1px; color: var(--text-primary); }
+    .os-badge { font-size: 10px; background: var(--accent-blue); color: #000; padding: 1px 4px; border-radius: 3px; margin-left: 6px; font-weight: 700; vertical-align: middle; }
+    .brand-subtitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+    
+    /* Metrics Cluster */
+    .metrics-section { display: flex; gap: 0px; }
+    .metric-box { padding: 0 24px; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: flex-end; }
+    .metric-box:last-child { border-right: none; padding-right: 0; }
+    .metric-label { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 2px; }
+    .metric-value { font-family: 'Segoe UI', sans-serif; font-size: 22px; font-weight: 600; color: var(--text-primary); }
+    .metric-delta { font-size: 12px; font-weight: 500; margin-left: 6px; }
 
-    /* Better metrics */
-    .metric-card {
-        background: var(--surface);
-        border-radius: 10px;
-        border-left: 4px solid var(--accent);
-        padding: 1.2rem 1.4rem;
-        text-align: center;
-        min-height: 110px;
+    /* Live Pulse */
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); }
+        70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
     }
-    .metric-value {
-        font-size: 2.2rem !important;
-        font-weight: 700;
-        color: var(--text-primary);
-    }
-    .metric-label {
-        font-size: 0.85rem !important;
-        color: var(--text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        margin-top: 0.4rem;
-    }
+    .live-dot { height: 6px; width: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite; margin-right: 5px; }
 
-    /* Status badges */
-    .badge {
-        padding: 5px 10px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.78rem;
-    }
-    .badge-critical { background: var(--critical); color: white; }
-    .badge-high     { background: var(--high); color: black; }
-    .badge-medium   { background: var(--medium); color: black; }
-    .badge-low      { background: var(--low); color: white; }
+    /* Utility Colors */
+    .color-red { color: var(--accent-red) !important; }
+    .color-gold { color: var(--accent-gold) !important; }
+    .color-green { color: var(--accent-green) !important; }
+    .color-blue { color: var(--accent-blue) !important; }
 
-    /* Chat */
-    .chat-container {
-        background: var(--surface);
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.8rem 0;
-    }
-    .chat-user {
-        background: #0e1a2f;
-        border-left: 4px solid var(--accent);
-    }
-    .chat-ai {
-        background: #13251f;
-        border-left: 4px solid var(--low);
-    }
-
-    hr {
-        border-color: var(--border) !important;
-    }
+    /* Components */
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
+    .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
+    .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
+    .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+    
+    .block-container { padding-top: 1.5rem; }
+    hr { border-color: var(--border-color) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# BACKEND (unchanged logic)
+# 3. BACKEND (DYNAMIC SIMULATION)
 # -----------------------------------------------------------------------------
-if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
-
-class SentinelBackend:
+class EnterpriseBackend:
     @staticmethod
-    def get_live_gmt_time():
+    def get_system_time():
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S GMT")
 
     @staticmethod
     def get_global_metrics():
+        # Dynamic Simulation (Random Walk)
+        current_risk = st.session_state['system_state']['risk_index']
+        drift = np.random.uniform(-0.5, 0.8)
+        new_risk = max(0, min(100, current_risk + drift))
+        
+        st.session_state['system_state']['risk_index'] = new_risk
+        st.session_state['system_state']['risk_history'].append(new_risk)
+        if len(st.session_state['system_state']['risk_history']) > 24:
+            st.session_state['system_state']['risk_history'].pop(0)
+
         return {
-            "risk_index": 72.4,
-            "critical_events": 3,
+            "risk_index": f"{new_risk:.2f}",
+            "risk_delta": f"{drift:+.2f}%",
+            "critical_events": st.session_state['system_state']['active_alerts'],
             "escalating": 8,
             "stable_pct": 84,
-            "last_refresh": SentinelBackend.get_live_gmt_time(),
-            "user_role": "COMMANDER / TIER-1"
+            "last_refresh": EnterpriseBackend.get_system_time(),
+            "user_role": "COMMANDER / TIER-1",
+            "latency": f"{np.random.randint(18, 42)}ms"
         }
 
     @staticmethod
@@ -157,20 +160,18 @@ class SentinelBackend:
 
     @staticmethod
     def get_analytics_data():
-        regions = ['APAC', 'EMEA', 'AMER', 'LATAM']
-        risks = [45, 30, 15, 10]
-        velocity = pd.DataFrame({
-            'time': pd.date_range(start='2024-01-01', periods=10, freq='H'),
-            'risk_score': [20, 22, 25, 24, 30, 45, 50, 65, 72, 72]
-        })
+        history = st.session_state['system_state']['risk_history']
+        times = [datetime.now() - timedelta(hours=i) for i in range(len(history))][::-1]
+        velocity = pd.DataFrame({'time': times, 'risk_score': history})
         root_causes = pd.DataFrame({'cause': ['Geopolitical', 'Climate', 'Cyber', 'Labor'], 'count': [40, 25, 20, 15]})
-        return regions, risks, velocity, root_causes
+        return velocity, root_causes
 
     @staticmethod
     def get_logs():
         return pd.DataFrame([
             {"Timestamp": "10:42:01", "User": "ADMIN_01", "Action": "SIMULATION_RUN", "Target": "Taiwan_Semi"},
             {"Timestamp": "10:38:15", "User": "AUTO_BOT", "Action": "ALERT_TRIGGER", "Target": "Strait_Malacca"},
+            {"Timestamp": "10:35:22", "User": "SYS_CORE", "Action": "DATA_SYNC", "Target": "Global_Node"},
         ])
 
     @staticmethod
@@ -181,23 +182,23 @@ class SentinelBackend:
         pdf.set_font("Arial", 'B', 16)
         pdf.cell(200, 10, txt="AVELLON INTELLIGENCE BRIEF", ln=1, align='C')
         pdf.set_font("Arial", size=10)
-        pdf.cell(200, 10, txt=f"Generated: {SentinelBackend.get_live_gmt_time()} | SECRET//NOFORN", ln=1, align='C')
+        pdf.cell(200, 10, txt=f"Generated: {EnterpriseBackend.get_system_time()} | SECRET//NOFORN", ln=1, align='C')
         pdf.ln(10)
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(200, 10, txt="1. EXECUTIVE SUMMARY", ln=1, align='L')
         pdf.set_font("Arial", size=11)
-        pdf.multi_cell(0, 10, txt="Global risk velocity has increased by 14%. Critical friction detected in the Red Sea corridor. Financial blast radius estimation for Tier-1 automotive sector is $45M/day.")
+        pdf.multi_cell(0, 10, txt="Global risk velocity has increased. Critical friction detected in the Red Sea corridor. Financial blast radius estimation for Tier-1 automotive sector is significant.")
         pdf.ln(5)
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(200, 10, txt="2. ACTIVE THREAT VECTORS", ln=1, align='L')
         pdf.set_font("Arial", size=10)
-        for asset in SentinelBackend.get_map_assets():
+        for asset in EnterpriseBackend.get_map_assets():
             pdf.cell(0, 8, txt=f"- {asset['name']}: {asset['risk']} ({asset['type']})", ln=1)
         return pdf.output(dest='S').encode('latin-1')
 
     @staticmethod
     def ai_chat_response(query):
-        t = SentinelBackend.get_live_gmt_time()
+        t = EnterpriseBackend.get_system_time()
         q = query.lower()
         if "taiwan" in q:
             return f"[{t}] **FUSION ANALYSIS:** Satellite imagery (NASA GIBS) indicates nominal naval activity. However, Dark Web chatter regarding 'silicon blockade' has spiked 300%. **PREDICTION:** Low kinetic risk, High cyber risk."
@@ -209,236 +210,191 @@ class SentinelBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# MODERN COMPONENTS
+# 4. RENDER FUNCTIONS (HUD + MAP + UI)
 # -----------------------------------------------------------------------------
-def metric_card(label, value, delta=None, color="var(--accent)"):
-    delta_str = f"Δ {delta}" if delta else ""
-    # Ensure delta is treated as a string before checking characters
-    delta_val = str(delta) if delta else ""
-    delta_color = color if delta and "+" in delta_val else "var(--text-secondary)"
+
+def render_enterprise_header():
+    """Renders the Professional HUD Header without indentation issues."""
+    metrics = EnterpriseBackend.get_global_metrics()
     
-    st.markdown(f"""
-    <div class="metric-card" style="border-left-color: {color}">
-        <div class="metric-value">{value}</div>
-        <div class="metric-label">{label}</div>
-        <div style="color:{delta_color}; font-size:0.9rem; margin-top:0.3rem;">{delta_str}</div>
+    header_html = f"""
+<div class="header-container">
+    <div class="brand-section">
+        <div class="brand-logo">🛡️</div>
+        <div class="brand-text-group">
+            <div class="brand-title">AVELLON <span class="os-badge">OS</span></div>
+            <div class="brand-subtitle">
+                <span class="live-dot"></span> 
+                LIVE FEED • {metrics['last_refresh']}
+            </div>
+        </div>
     </div>
-    """, unsafe_allow_html=True)
-
-def render_header():
-    metrics = SentinelBackend.get_global_metrics()
-    cols = st.columns([1,1,1,1,1.6,1.2])
-
-    with cols[0]:
-        # Fix: Passed CSS variables as strings
-        metric_card("GLOBAL RISK INDEX", f"{metrics['risk_index']}", "+2.4%", "var(--critical)")
-    with cols[1]:
-        metric_card("ACTIVE CRITICAL", metrics['critical_events'], "Alerts", "var(--critical)")
-    with cols[2]:
-        metric_card("ESCALATING", metrics['escalating'], "Assets", "var(--high)")
-    with cols[3]:
-        metric_card("STABLE", f"{metrics['stable_pct']}%", None, "var(--low)")
-    with cols[4]:
-        st.markdown(f"""
-        <div class="card" style="text-align:center; padding:1.1rem;">
-            <div style="color:var(--text-secondary); font-size:0.82rem; text-transform:uppercase;">LIVE TIME (GMT)</div>
-            <div style="font-size:1.38rem; color:var(--accent); font-weight:600; margin-top:0.3rem;">
-                {metrics['last_refresh']}
+    <div class="metrics-section">
+        <div class="metric-box">
+            <div class="metric-label">GLOBAL RISK</div>
+            <div class="metric-value {'color-red' if float(metrics['risk_index']) > 70 else 'color-blue'}">
+                {metrics['risk_index']} <span class="metric-delta" style="color:#8b949e">{metrics['risk_delta']}</span>
             </div>
         </div>
-        """, unsafe_allow_html=True)
-    with cols[5]:
-        st.markdown(f"""
-        <div class="card" style="text-align:center; padding:1.1rem;">
-            <div style="color:var(--text-secondary); font-size:0.82rem; text-transform:uppercase;">CURRENT ROLE</div>
-            <div style="font-size:1.32rem; color:var(--low); font-weight:600; margin-top:0.3rem;">
-                {metrics['user_role']}
-            </div>
+        <div class="metric-box">
+            <div class="metric-label">ACTIVE ALERTS</div>
+            <div class="metric-value color-gold">{metrics['critical_events']}</div>
         </div>
-        """, unsafe_allow_html=True)
+        <div class="metric-box">
+            <div class="metric-label">LATENCY</div>
+            <div class="metric-value color-green">{metrics['latency']}</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">OPERATOR</div>
+            <div class="metric-value" style="font-size:16px; margin-top:5px;">{metrics['user_role']}</div>
+        </div>
+    </div>
+</div>
+"""
+    st.markdown(header_html, unsafe_allow_html=True)
 
 def render_sidebar():
     with st.sidebar:
-        st.title("🛡️ AVELLON")
-        st.caption(f"Command & Control • {SentinelBackend.get_live_gmt_time()}")
+        st.caption(f"COMMAND TOOLS")
         st.markdown("---")
-
-        st.subheader("Operating Mode")
-        mode = st.radio("", 
-            ["🔴 LIVE MONITORING", "🔍 DEEP SCAN", "🔮 PREDICTIVE", "🎲 SIMULATION"],
-            label_visibility="collapsed")
-
-        st.markdown("### Active Filters")
-        threat_levels = st.multiselect("Threat Level", 
-            ["CRITICAL", "HIGH", "MEDIUM", "LOW"], 
-            default=["CRITICAL", "HIGH"])
-
+        st.radio("MODE", ["LIVE MONITORING", "DEEP SCAN", "SIMULATION"], label_visibility="collapsed")
+        
+        st.markdown("### FILTERS")
+        st.multiselect("THREAT LEVEL", ["CRITICAL", "HIGH", "MEDIUM", "LOW"], default=["CRITICAL", "HIGH"])
+        
         st.markdown("---")
-        st.info("System Status: **ONLINE**\nSatellites: **CONNECTED**\nAvg Latency: **42ms**", icon="✅")
+        st.checkbox("Show Weather Layers", value=True)
+        st.checkbox("Show Naval Assets", value=False)
+        st.markdown("---")
+        st.info("System Status: **ONLINE**")
 
 def render_map_section():
-    st.markdown("### 🗺️ WAR ROOM – Live Theater (NASA GIBS Overlay)")
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    assets = SentinelBackend.get_map_assets()
+    st.markdown("### 🗺️ GLOBAL THEATER OVERVIEW")
     m = folium.Map(location=[20, 80], zoom_start=2, tiles=None)
-
-    folium.TileLayer('CartoDB dark_matter', name="Tactical Dark").add_to(m)
-
+    folium.TileLayer('CartoDB dark_matter', name="Dark").add_to(m)
+    
+    # NASA GIBS
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     folium.TileLayer(
         tiles=f'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{today}/GoogleMapsCompatible_Level9/{{z}}/{{y}}/{{x}}.jpg',
-        attr='NASA GIBS • Live Daily',
-        name='NASA Satellite (True Color)',
-        overlay=True,
-        control=True,
-        opacity=0.65
+        attr='NASA GIBS', overlay=True, opacity=0.5
     ).add_to(m)
 
-    risk_colors = {"CRITICAL": "#f85149", "HIGH": "#f0883e", "MEDIUM": "#d2a241", "LOW": "#3fb950"}
-
-    for asset in assets:
-        color = risk_colors.get(asset["risk"], "#666")
-        folium.CircleMarker(
-            location=[asset["lat"], asset["lon"]],
-            radius=10 if asset["risk"] == "CRITICAL" else 7,
-            popup=f"<b>{asset['name']}</b><br>Risk: {asset['risk']} • Confidence: {asset['conf']}%",
-            color=color, fill=True, fill_color=color, fill_opacity=0.75
-        ).add_to(m)
-
-        if asset["risk"] == "CRITICAL":
-            folium.Circle(location=[asset["lat"], asset["lon"]], radius=600000,
-                          color=color, weight=1.5, fill=True, fill_opacity=0.12).add_to(m)
-
-    folium.LayerControl().add_to(m)
-    st_folium(m, height=480, use_container_width=True)
+    for a in EnterpriseBackend.get_map_assets():
+        c = {"CRITICAL": "#f85149", "HIGH": "#d29922", "MEDIUM": "#58a6ff", "LOW": "#3fb950"}.get(a['risk'])
+        
+        # HTML Tooltip
+        tooltip = f"""
+        <div style='font-family:sans-serif; padding:5px;'>
+            <b>{a['name']}</b><br>
+            <span style='color:{c}'>● {a['risk']}</span><br>
+            <span style='font-size:10px; color:#666'>{a['type']}</span>
+        </div>
+        """
+        
+        folium.CircleMarker([a['lat'], a['lon']], radius=6, color=c, fill=True, fill_opacity=0.9, popup=tooltip, tooltip=a['name']).add_to(m)
+        if a['risk'] == "CRITICAL":
+            folium.Circle([a['lat'], a['lon']], radius=500000, color=c, weight=1, fill=True, fill_opacity=0.1).add_to(m)
+            
+    st_folium(m, height=420, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# MAIN LAYOUT
+# 5. MAIN EXECUTION
 # -----------------------------------------------------------------------------
 def main():
-    render_header()
+    # 1. Render Professional HUD Header
+    render_enterprise_header()
     render_sidebar()
-
-    # Main content area
-    col_map, col_side = st.columns([2.4, 1])
-
-    with col_map:
+    
+    # Layout
+    c_map, c_feed = st.columns([2.1, 1.2])
+    
+    with c_map:
         render_map_section()
-
-    with col_side:
-        # Intelligence Feed
-        with st.container():
-            st.markdown("<div class='card'>", unsafe_allow_html=True)
-            st.subheader("📡 INTELLIGENCE STREAM")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # ALL 5 ORIGINAL TABS RESTORED
+        t1, t2, t3, t4, t5 = st.tabs(["📊 ANALYTICS", "💬 AI ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION", "📜 LOGS"])
+        
+        with t1:
+            vel_df, cause_df = EnterpriseBackend.get_analytics_data()
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("**Risk Velocity (Live Feed)**")
+                st.altair_chart(alt.Chart(vel_df).mark_area(
+                    line={'color':'#58a6ff'},
+                    color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#58a6ff', offset=0), alt.GradientStop(color='rgba(88,166,255,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
+                ).encode(x='time', y='risk_score').properties(height=220), use_container_width=True)
+            with c2:
+                st.markdown("**Root Cause Analysis**")
+                st.altair_chart(alt.Chart(cause_df).mark_arc(innerRadius=50).encode(theta='count', color='cause').properties(height=220), use_container_width=True)
+                
+        with t2:
+            st.markdown("#### 💬 AI FUSION ANALYST (Multi-INT)")
+            # Chat Interface
+            cnt = st.container(height=300)
+            with cnt:
+                for msg in st.session_state['chat_history']:
+                    st.chat_message(msg['role']).write(msg['content'])
             
-            pdf_data = SentinelBackend.generate_pdf_brief()
-            st.download_button(
-                "📄 Download Full Brief (PDF)",
-                data=pdf_data,
-                file_name=f"Avellon_Brief_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf"
-            )
+            q = st.chat_input("Ask about global assets, financial impact, or weather patterns...")
+            if q:
+                st.session_state['chat_history'].append({"role": "user", "content": q})
+                with st.spinner("Processing intelligence streams..."):
+                    time.sleep(0.8) 
+                    resp = EnterpriseBackend.ai_chat_response(q)
+                    st.session_state['chat_history'].append({"role": "assistant", "content": resp})
+                st.rerun()
 
-            for evt in SentinelBackend.get_intelligence_feed():
-                badge_class = f"badge badge-{evt['severity'].lower()}"
-                with st.expander(f"{evt['headline']}"):
-                    st.markdown(f"<span class='{badge_class}'>{evt['severity']}</span>  {evt['timestamp']}", unsafe_allow_html=True)
-                    st.caption(f"{evt['category']} • {evt['source']}")
-                    st.write("**Why it matters:**", evt['why'])
-                    if st.button("Initiate Response Protocol", key=f"act_{evt['id']}"):
-                        st.info("Response protocol initiated (simulation mode)", icon="⚡")
-            st.markdown("</div>", unsafe_allow_html=True)
+        with t3:
+            st.markdown("#### SUPPLY CHAIN DIGITAL TWIN")
+            # Graphviz Graph
+            g = graphviz.Digraph()
+            g.attr(rankdir='LR', bgcolor='transparent')
+            g.attr('node', shape='box', style='filled', color='white', fontname='Sans-Serif')
+            g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c', fontcolor='white') 
+            g.node('B', 'Assembly Node', fillcolor='#3a2e1c', fontcolor='white') 
+            g.node('C', 'Global Logistics', fillcolor='#1c3a2e', fontcolor='white')
+            g.node('D', 'End Market', fillcolor='#1c2e4a', fontcolor='white')
+            g.edge('A', 'B'); g.edge('B', 'C'); g.edge('C', 'D')
+            st.graphviz_chart(g, use_container_width=True)
 
-    # Tabs section
-    st.markdown("---")
-    tab_analytics, tab_chat, tab_twin, tab_sim, tab_logs = st.tabs(
-        ["📊 Analytics", "💬 AI Analyst", "🕸️ Digital Twin", "🎲 Simulation", "📜 Logs"]
-    )
+        with t4:
+            st.markdown("#### SCENARIO SIMULATOR")
+            d = st.slider("Disruption Duration (Days)", 1, 60, 7)
+            impact = d * 12.5
+            st.metric("Estimated Revenue Impact", f"${impact:,.1f}M", "High Confidence")
+            # BUG FIX: Force integer for progress bar
+            st.progress(int(min(100, d*2)))
+            
+        with t5:
+            st.markdown("#### SYSTEM LOGS")
+            st.dataframe(EnterpriseBackend.get_logs(), use_container_width=True, hide_index=True)
+            
+    with c_feed:
+        st.subheader("📡 INTEL FEED")
+        
+        # PDF Button
+        pdf_bytes = EnterpriseBackend.generate_pdf_brief()
+        st.download_button("📄 Download Brief (PDF)", data=pdf_bytes, file_name="Avellon_Brief.pdf", mime="application/pdf", use_container_width=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-    with tab_analytics:
-        _, _, velocity_df, cause_df = SentinelBackend.get_analytics_data()
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**Risk Velocity (last 10 hours)**")
-            st.altair_chart(
-                alt.Chart(velocity_df)
-                .mark_line(color='#58a6ff', point=True)
-                .encode(x='time', y='risk_score')
-                .properties(height=240),
-                use_container_width=True
-            )
-
-        with c2:
-            st.markdown("**Root Cause Distribution**")
-            st.altair_chart(
-                alt.Chart(cause_df)
-                .mark_arc(innerRadius=60)
-                .encode(theta='count', color='cause')
-                .properties(height=240),
-                use_container_width=True
-            )
-
-    with tab_chat:
-        st.markdown("#### 💬 Fusion Intelligence Analyst")
-        st.caption("Satellite • SIGINT • OSINT • Dark Web • ERP")
-
-        chat_container = st.container(height=420)
-
-        with chat_container:
-            for msg in st.session_state['chat_history']:
-                cls = "chat-user" if msg['role'] == "user" else "chat-ai"
-                with st.chat_message(msg['role'], avatar="🧑‍💻" if msg['role']=='user' else "🛡️"):
-                    st.markdown(msg['content'])
-
-        prompt = st.chat_input("Ask about any asset, corridor, or financial impact...")
-
-        if prompt:
-            st.session_state['chat_history'].append({"role": "user", "content": prompt})
-
-            with st.spinner("Fusing multi-source intelligence..."):
-                time.sleep(1.2)
-                response = SentinelBackend.ai_chat_response(prompt)
-                st.session_state['chat_history'].append({"role": "AI", "content": response})
-
-            st.rerun()
-
-    with tab_twin:
-        st.markdown("#### Supply Chain Digital Twin – Example")
-        g = graphviz.Digraph()
-        g.attr(rankdir='LR', bgcolor='transparent', fontname='Segoe UI')
-        g.attr('node', shape='box', style='filled', fillcolor='#1f2937', fontcolor='white', fontname='Segoe UI')
-        g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c')
-        g.node('B', 'Assembly', fillcolor='#3a2e1c')
-        g.node('C', 'Logistics', fillcolor='#1c3a2e')
-        g.node('D', 'Apple', fillcolor='#1c2e4a')
-        g.edge('A', 'B')
-        g.edge('B', 'C')
-        g.edge('C', 'D')
-        st.graphviz_chart(g, use_container_width=True)
-
-    with tab_sim:
-        st.markdown("#### Scenario Simulation Engine")
-        days = st.slider("Simulation Duration (days)", 1, 30, 7)
-        risk_value = days * 12.5
-        st.metric("Estimated Revenue Risk", f"${risk_value:,.1f}M", delta="High Confidence")
-        st.progress(min(100, days * 3.5))
-
-    with tab_logs:
-        st.dataframe(
-            SentinelBackend.get_logs().style.set_properties(**{'background':'var(--surface)', 'color':'var(--text-primary)'}),
-            use_container_width=True,
-            hide_index=True
-        )
+        for i in EnterpriseBackend.get_intelligence_feed():
+            b_cls = f"badge badge-{i['severity'].lower()}"
+            with st.expander(f"{i['headline']}"):
+                st.markdown(f"<span class='{b_cls}'>{i['severity']}</span> {i['timestamp']}", unsafe_allow_html=True)
+                st.caption(f"Source: {i['source']}")
+                st.write(i['why'])
+                if st.button("ACTIVATE PROTOCOL", key=i['id']):
+                    st.toast(f"Protocol initiated for {i['id']}", icon="⚡")
 
     # Footer
     st.markdown("---")
-    cols = st.columns(4)
-    cols[0].caption("🔒 DATA ACCESS LEVEL: 5 (TOP SECRET)")
-    cols[1].caption("🔑 API KEY: sk_live_...94x")
-    cols[2].caption("📡 SATELLITE FEED: NASA GIBS • ACTIVE")
-    cols[3].caption("🏥 SYSTEM HEALTH: 99.99% • ONLINE")
+    fc1, fc2, fc3, fc4 = st.columns(4)
+    with fc1: st.caption("🔒 DATA ACCESS: LEVEL 5 (TOP SECRET)")
+    with fc2: st.caption("🔑 API KEY: sk_live_...94x")
+    with fc3: st.caption("📡 SAT FEED: NASA GIBS ACTIVE")
+    with fc4: st.caption("🏥 HEALTH: 99.99% UPTIME")
 
 if __name__ == "__main__":
     main()
