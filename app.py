@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Session State for Dynamic Data
+# Initialize Session State
 if 'system_state' not in st.session_state:
     st.session_state['system_state'] = {
         'risk_index': 72.4,
@@ -33,7 +33,7 @@ if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
 # -----------------------------------------------------------------------------
-# 2. STYLING (ENTERPRISE HUD + DARK THEME)
+# 2. STYLING (UPDATED BUTTON STYLES)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -91,25 +91,46 @@ st.markdown("""
     }
     .live-dot { height: 6px; width: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite; margin-right: 5px; }
 
+    /* CUSTOM DOWNLOAD BUTTON STYLING */
+    /* Targets the primary button to make it look like a high-end export tool */
+    div.stButton > button[kind="primary"] {
+        background-color: #1f2937;
+        color: var(--accent-blue);
+        border: 1px solid var(--accent-blue);
+        border-radius: 6px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        width: 100%;
+        text-transform: uppercase;
+        font-size: 0.85rem;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background-color: var(--accent-blue);
+        color: #000;
+        box-shadow: 0 0 12px rgba(88, 166, 255, 0.4);
+        border-color: var(--accent-blue);
+    }
+
     /* Utility Colors */
     .color-red { color: var(--accent-red) !important; }
     .color-gold { color: var(--accent-gold) !important; }
     .color-green { color: var(--accent-green) !important; }
     .color-blue { color: var(--accent-blue) !important; }
 
-    /* Components */
+    .block-container { padding-top: 1.5rem; }
+    hr { border-color: var(--border-color) !important; }
+    
+    /* Badges */
     .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
     .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
     .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
     .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
-    
-    .block-container { padding-top: 1.5rem; }
-    hr { border-color: var(--border-color) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. BACKEND (DYNAMIC SIMULATION)
+# 3. BACKEND (UPDATED PDF GENERATION)
 # -----------------------------------------------------------------------------
 class EnterpriseBackend:
     @staticmethod
@@ -118,7 +139,7 @@ class EnterpriseBackend:
 
     @staticmethod
     def get_global_metrics():
-        # Dynamic Simulation (Random Walk)
+        # Dynamic Simulation
         current_risk = st.session_state['system_state']['risk_index']
         drift = np.random.uniform(-0.5, 0.8)
         new_risk = max(0, min(100, current_risk + drift))
@@ -176,24 +197,72 @@ class EnterpriseBackend:
 
     @staticmethod
     def generate_pdf_brief():
+        """
+        Generates an Enterprise-Grade PDF with Financial Insights.
+        """
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        
+        # Header
         pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, txt="AVELLON INTELLIGENCE BRIEF", ln=1, align='C')
+        pdf.set_text_color(40, 40, 40)
+        pdf.cell(0, 10, txt="AVELLON | INTELLIGENCE & RISK ASSESSMENT", ln=1, align='L')
+        
         pdf.set_font("Arial", size=10)
-        pdf.cell(200, 10, txt=f"Generated: {EnterpriseBackend.get_system_time()} | SECRET//NOFORN", ln=1, align='C')
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 10, txt=f"Report Generated: {EnterpriseBackend.get_system_time()} | CLASSIFICATION: SECRET//NOFORN", ln=1, align='L')
+        pdf.line(10, 25, 200, 25)
         pdf.ln(10)
+
+        # 1. Executive Summary
         pdf.set_font("Arial", 'B', 12)
-        pdf.cell(200, 10, txt="1. EXECUTIVE SUMMARY", ln=1, align='L')
-        pdf.set_font("Arial", size=11)
-        pdf.multi_cell(0, 10, txt="Global risk velocity has increased. Critical friction detected in the Red Sea corridor. Financial blast radius estimation for Tier-1 automotive sector is significant.")
-        pdf.ln(5)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(200, 10, txt="2. ACTIVE THREAT VECTORS", ln=1, align='L')
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(0, 10, txt="1. EXECUTIVE SITUATION REPORT", ln=1, align='L')
         pdf.set_font("Arial", size=10)
-        for asset in EnterpriseBackend.get_map_assets():
-            pdf.cell(0, 8, txt=f"- {asset['name']}: {asset['risk']} ({asset['type']})", ln=1)
+        pdf.multi_cell(0, 6, txt="Current global risk velocity has accelerated by 14% week-over-week. Critical friction points in the Red Sea and Taiwan Strait are creating significant supply chain latency. Immediate mitigation protocols are recommended for Tier-1 suppliers.")
+        pdf.ln(5)
+
+        # 2. Financial Impact Assessment (NEW FEATURE)
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, txt="2. FINANCIAL IMPACT PROJECTIONS", ln=1, align='L')
+        
+        pdf.set_font("Courier", size=10) # Monospace for data
+        pdf.set_fill_color(240, 240, 240)
+        
+        # Data Rows
+        financials = [
+            ("Est. Revenue at Risk (Daily)", "$ 12.5 M", "HIGH"),
+            ("Supply Chain Latency Cost", "$  2.1 M", "MEDIUM"),
+            ("Insurance Premium Risk", "+ 15.4 %", "CRITICAL"),
+            ("Alternative Logistics CapEx", "$  4.5 M", "MEDIUM")
+        ]
+        
+        for metric, value, risk in financials:
+            pdf.cell(90, 8, txt=metric, border=1, fill=True)
+            pdf.cell(50, 8, txt=value, border=1, align='R')
+            pdf.cell(50, 8, txt=risk, border=1, align='C')
+            pdf.ln()
+            
+        pdf.ln(5)
+
+        # 3. Active Threat Vectors
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(0, 10, txt="3. CRITICAL ASSET MONITORING", ln=1, align='L')
+        pdf.set_font("Arial", size=10)
+        
+        assets = EnterpriseBackend.get_map_assets()
+        for asset in assets:
+            if asset['risk'] in ['CRITICAL', 'HIGH']:
+                pdf.set_text_color(200, 0, 0) # Red for high risk
+                status = f"[{asset['risk']}]"
+            else:
+                pdf.set_text_color(0, 100, 0) # Green for low
+                status = f"[{asset['risk']}]"
+                
+            pdf.cell(40, 8, txt=status, border=0)
+            pdf.set_text_color(0, 0, 0)
+            pdf.cell(0, 8, txt=f"{asset['name']} ({asset['type']})", ln=1)
+
         return pdf.output(dest='S').encode('latin-1')
 
     @staticmethod
@@ -210,11 +279,11 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 4. RENDER FUNCTIONS (HUD + MAP + UI)
+# 4. RENDER FUNCTIONS
 # -----------------------------------------------------------------------------
 
 def render_enterprise_header():
-    """Renders the Professional HUD Header without indentation issues."""
+    """Renders the Professional HUD Header."""
     metrics = EnterpriseBackend.get_global_metrics()
     
     header_html = f"""
@@ -302,7 +371,6 @@ def render_map_section():
 # 5. MAIN EXECUTION
 # -----------------------------------------------------------------------------
 def main():
-    # 1. Render Professional HUD Header
     render_enterprise_header()
     render_sidebar()
     
@@ -313,7 +381,7 @@ def main():
         render_map_section()
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # ALL 5 ORIGINAL TABS RESTORED
+        # TABS
         t1, t2, t3, t4, t5 = st.tabs(["📊 ANALYTICS", "💬 AI ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION", "📜 LOGS"])
         
         with t1:
@@ -364,7 +432,6 @@ def main():
             d = st.slider("Disruption Duration (Days)", 1, 60, 7)
             impact = d * 12.5
             st.metric("Estimated Revenue Impact", f"${impact:,.1f}M", "High Confidence")
-            # BUG FIX: Force integer for progress bar
             st.progress(int(min(100, d*2)))
             
         with t5:
@@ -374,9 +441,16 @@ def main():
     with c_feed:
         st.subheader("📡 INTEL FEED")
         
-        # PDF Button
+        # UPDATED: Attractive Download Button
         pdf_bytes = EnterpriseBackend.generate_pdf_brief()
-        st.download_button("📄 Download Brief (PDF)", data=pdf_bytes, file_name="Avellon_Brief.pdf", mime="application/pdf", use_container_width=True)
+        st.download_button(
+            label="DOWNLOAD INTELLIGENCE BRIEF",
+            data=pdf_bytes,
+            file_name="Avellon_Financial_Risk_Brief.pdf",
+            mime="application/pdf",
+            type="primary", # Uses our custom CSS for the accent color
+            use_container_width=True
+        )
         st.markdown("<br>", unsafe_allow_html=True)
 
         for i in EnterpriseBackend.get_intelligence_feed():
