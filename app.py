@@ -33,7 +33,7 @@ if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
 # -----------------------------------------------------------------------------
-# 2. STYLING (UPDATED BUTTON STYLES)
+# 2. STYLING (ENTERPRISE HUD + DARK THEME)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -92,7 +92,6 @@ st.markdown("""
     .live-dot { height: 6px; width: 6px; background-color: var(--accent-red); border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite; margin-right: 5px; }
 
     /* CUSTOM DOWNLOAD BUTTON STYLING */
-    /* Targets the primary button to make it look like a high-end export tool */
     div.stButton > button[kind="primary"] {
         background-color: #1f2937;
         color: var(--accent-blue);
@@ -118,19 +117,19 @@ st.markdown("""
     .color-green { color: var(--accent-green) !important; }
     .color-blue { color: var(--accent-blue) !important; }
 
-    .block-container { padding-top: 1.5rem; }
-    hr { border-color: var(--border-color) !important; }
-    
-    /* Badges */
+    /* Components */
     .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
     .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
     .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-gold); border: 1px solid var(--accent-gold); }
     .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+    
+    .block-container { padding-top: 1.5rem; }
+    hr { border-color: var(--border-color) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. BACKEND (UPDATED PDF GENERATION)
+# 3. BACKEND (DYNAMIC SIMULATION)
 # -----------------------------------------------------------------------------
 class EnterpriseBackend:
     @staticmethod
@@ -199,6 +198,7 @@ class EnterpriseBackend:
     def generate_pdf_brief():
         """
         Generates an Enterprise-Grade PDF with Financial Insights.
+        Includes fix for underline overlap by using dynamic Y positioning.
         """
         pdf = FPDF()
         pdf.add_page()
@@ -211,7 +211,10 @@ class EnterpriseBackend:
         pdf.set_font("Arial", size=10)
         pdf.set_text_color(100, 100, 100)
         pdf.cell(0, 10, txt=f"Report Generated: {EnterpriseBackend.get_system_time()} | CLASSIFICATION: SECRET//NOFORN", ln=1, align='L')
-        pdf.line(10, 25, 200, 25)
+        
+        # FIX: Draw line at current Y position to prevent strikethrough effect
+        y_pos = pdf.get_y()
+        pdf.line(10, y_pos, 200, y_pos)
         pdf.ln(10)
 
         # 1. Executive Summary
@@ -222,14 +225,13 @@ class EnterpriseBackend:
         pdf.multi_cell(0, 6, txt="Current global risk velocity has accelerated by 14% week-over-week. Critical friction points in the Red Sea and Taiwan Strait are creating significant supply chain latency. Immediate mitigation protocols are recommended for Tier-1 suppliers.")
         pdf.ln(5)
 
-        # 2. Financial Impact Assessment (NEW FEATURE)
+        # 2. Financial Impact Assessment
         pdf.set_font("Arial", 'B', 12)
         pdf.cell(0, 10, txt="2. FINANCIAL IMPACT PROJECTIONS", ln=1, align='L')
         
         pdf.set_font("Courier", size=10) # Monospace for data
         pdf.set_fill_color(240, 240, 240)
         
-        # Data Rows
         financials = [
             ("Est. Revenue at Risk (Daily)", "$ 12.5 M", "HIGH"),
             ("Supply Chain Latency Cost", "$  2.1 M", "MEDIUM"),
@@ -441,14 +443,14 @@ def main():
     with c_feed:
         st.subheader("📡 INTEL FEED")
         
-        # UPDATED: Attractive Download Button
+        # Download Button
         pdf_bytes = EnterpriseBackend.generate_pdf_brief()
         st.download_button(
             label="DOWNLOAD INTELLIGENCE BRIEF",
             data=pdf_bytes,
             file_name="Avellon_Financial_Risk_Brief.pdf",
             mime="application/pdf",
-            type="primary", # Uses our custom CSS for the accent color
+            type="primary", 
             use_container_width=True
         )
         st.markdown("<br>", unsafe_allow_html=True)
