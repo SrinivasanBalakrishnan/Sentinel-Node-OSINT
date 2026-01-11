@@ -205,48 +205,49 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 4. RENDER FUNCTIONS (HUD + MAP + UI)
+# 4. RENDER FUNCTIONS (FIXED INDENTATION FOR HUD)
 # -----------------------------------------------------------------------------
 
 def render_enterprise_header():
     """Renders the Phase 2 Professional HUD Header."""
     metrics = EnterpriseBackend.get_global_metrics()
     
+    # NOTE: The indentation inside this f-string has been removed 
+    # to prevent Markdown from interpreting it as a code block.
     st.markdown(f"""
-    <div class="hud-container">
-        <div class="hud-title-section">
-            <div class="hud-logo">🛡️</div>
-            <div class="hud-text-group">
-                <div class="hud-main-title">AVELLON | OS</div>
-                <div class="hud-subtitle">
-                    <span class="status-dot"></span>
-                    LIVE FEED • {metrics['last_refresh']}
-                </div>
-            </div>
-        </div>
-        
-        <div class="hud-metrics">
-            <div class="hud-metric-box">
-                <div class="hud-metric-label">Global Risk Index</div>
-                <div class="hud-metric-value" style="color: {'var(--accent-danger)' if float(metrics['risk_index']) > 70 else 'var(--accent-primary)'}">
-                    {metrics['risk_index']} <span style="font-size:14px; color:var(--text-secondary)">{metrics['risk_delta']}</span>
-                </div>
-            </div>
-            <div class="hud-metric-box">
-                <div class="hud-metric-label">Active Alerts</div>
-                <div class="hud-metric-value" style="color: var(--accent-warning)">{metrics['critical_events']}</div>
-            </div>
-            <div class="hud-metric-box">
-                <div class="hud-metric-label">System Latency</div>
-                <div class="hud-metric-value" style="color: var(--accent-success)">{metrics['latency']}</div>
-            </div>
-            <div class="hud-metric-box">
-                <div class="hud-metric-label">Role</div>
-                <div class="hud-metric-value" style="font-size: 16px; color: var(--text-primary); margin-top:8px;">{metrics['user_role']}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+<div class="hud-container">
+<div class="hud-title-section">
+<div class="hud-logo">🛡️</div>
+<div class="hud-text-group">
+<div class="hud-main-title">AVELLON | OS</div>
+<div class="hud-subtitle">
+<span class="status-dot"></span>
+LIVE FEED • {metrics['last_refresh']}
+</div>
+</div>
+</div>
+<div class="hud-metrics">
+<div class="hud-metric-box">
+<div class="hud-metric-label">Global Risk Index</div>
+<div class="hud-metric-value" style="color: {'var(--accent-danger)' if float(metrics['risk_index']) > 70 else 'var(--accent-primary)'}">
+{metrics['risk_index']} <span style="font-size:14px; color:var(--text-secondary)">{metrics['risk_delta']}</span>
+</div>
+</div>
+<div class="hud-metric-box">
+<div class="hud-metric-label">Active Alerts</div>
+<div class="hud-metric-value" style="color: var(--accent-warning)">{metrics['critical_events']}</div>
+</div>
+<div class="hud-metric-box">
+<div class="hud-metric-label">System Latency</div>
+<div class="hud-metric-value" style="color: var(--accent-success)">{metrics['latency']}</div>
+</div>
+<div class="hud-metric-box">
+<div class="hud-metric-label">Role</div>
+<div class="hud-metric-value" style="font-size: 16px; color: var(--text-primary); margin-top:8px;">{metrics['user_role']}</div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
 
 def render_sidebar():
     with st.sidebar:
@@ -308,7 +309,7 @@ def main():
         render_map_section()
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # ANALYTICS TABS (Restored all tabs)
+        # ANALYTICS TABS
         t1, t2, t3, t4 = st.tabs(["📊 ANALYTICS", "💬 AI ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION"])
         
         with t1:
@@ -343,8 +344,7 @@ def main():
 
         with t3:
             st.markdown("#### SUPPLY CHAIN DIGITAL TWIN")
-            # 
-            g = graphviz.Digraph()
+            #             g = graphviz.Digraph()
             g.attr(rankdir='LR', bgcolor='transparent')
             g.attr('node', shape='box', style='filled', color='white', fontname='Sans-Serif')
             g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c', fontcolor='white') 
