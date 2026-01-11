@@ -12,7 +12,7 @@ from fpdf import FPDF
 import uuid
 
 # -----------------------------------------------------------------------------
-# 1. ENTERPRISE CONFIGURATION & SESSION STATE MANAGEMENT
+# 1. ENTERPRISE CONFIGURATION & SESSION STATE
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="AVELLON | Global Risk OS",
@@ -21,11 +21,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize Session State for "Living" Data
+# Initialize Session State
 if 'system_state' not in st.session_state:
     st.session_state['system_state'] = {
         'risk_index': 72.4,
-        'risk_history': [70, 71, 72, 72.4], # Seed history
+        'risk_history': [70, 71, 72, 72.4],
         'active_alerts': 3,
         'chat_history': [],
         'last_update': datetime.now(timezone.utc)
@@ -33,7 +33,9 @@ if 'system_state' not in st.session_state:
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
-# Enterprise-Grade CSS Variables & Typography
+# -----------------------------------------------------------------------------
+# 2. STYLING (PHASE 2 HUD + GLOBAL STYLES)
+# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
     :root {
@@ -41,114 +43,82 @@ st.markdown("""
         --card-bg: #161b22;
         --surface-hover: #1f2937;
         --border-color: #30363d;
-        --accent-primary: #58a6ff;   /* Enterprise Blue */
-        --accent-danger: #f85149;    /* Critical Red */
-        --accent-warning: #d29922;   /* Warning Orange */
-        --accent-success: #3fb950;   /* Safe Green */
+        --accent-primary: #58a6ff;
+        --accent-danger: #f85149;
+        --accent-warning: #d29922;
+        --accent-success: #3fb950;
         --text-primary: #f0f6fc;
         --text-secondary: #8b949e;
         --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     }
 
-    /* Global App Styling */
     .stApp {
         background-color: var(--bg-color);
         color: var(--text-primary);
         font-family: 'Segoe UI', system-ui, sans-serif;
     }
 
-    /* Enterprise Card Component */
-    .css-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        padding: 16px;
-        margin-bottom: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+    /* HUD Header Styling */
+    .hud-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 15px;
+        background: linear-gradient(180deg, rgba(22,27,34,0.6) 0%, rgba(13,17,23,0) 100%);
     }
-    
-    /* Metric Cards */
-    .metric-card {
-        background: var(--card-bg);
-        border-left: 4px solid var(--accent-primary);
-        border-radius: 6px;
-        padding: 1rem;
-        text-align: center;
-        transition: transform 0.2s, background 0.2s;
-        border: 1px solid var(--border-color);
-        border-left-width: 4px; 
+    .hud-title-section { display: flex; align-items: center; gap: 15px; }
+    .hud-logo { font-size: 28px; }
+    .hud-text-group { display: flex; flex-direction: column; }
+    .hud-main-title { font-weight: 700; font-size: 20px; letter-spacing: 1.2px; color: var(--text-primary); }
+    .hud-subtitle { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); display: flex; align-items: center; gap: 6px; }
+
+    /* Live Pulse Animation */
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); }
+        70% { box-shadow: 0 0 0 6px rgba(248, 81, 73, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
     }
-    .metric-card:hover {
-        transform: translateY(-2px);
-        background: var(--surface-hover);
-    }
-    .metric-value {
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: var(--text-primary);
-    }
-    .metric-label {
-        font-family: var(--font-mono);
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: var(--text-secondary);
-        margin-top: 0.5rem;
+    .status-dot {
+        height: 8px; width: 8px; background-color: var(--accent-danger);
+        border-radius: 50%; display: inline-block; animation: pulse-red 2s infinite;
     }
 
-    /* Status Badges */
-    .badge {
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        display: inline-block;
-        font-family: var(--font-mono);
-    }
+    /* Metric Group Styling */
+    .hud-metrics { display: flex; gap: 40px; align-items: center; }
+    .hud-metric-box { text-align: right; }
+    .hud-metric-label { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .hud-metric-value { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 600; margin-top: 2px; }
+
+    /* Badges */
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; display: inline-block; font-family: var(--font-mono); }
     .badge-critical { background: rgba(248, 81, 73, 0.2); color: var(--accent-danger); border: 1px solid var(--accent-danger); }
-    .badge-high     { background: rgba(210, 153, 34, 0.2); color: var(--accent-warning); border: 1px solid var(--accent-warning); }
-    .badge-medium   { background: rgba(88, 166, 255, 0.2); color: var(--accent-primary); border: 1px solid var(--accent-primary); }
-    .badge-low      { background: rgba(63, 185, 80, 0.2);  color: var(--accent-success); border: 1px solid var(--accent-success); }
-
-    /* Clean up Streamlit defaults */
-    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
+    .badge-high { background: rgba(210, 153, 34, 0.2); color: var(--accent-warning); border: 1px solid var(--accent-warning); }
+    .badge-medium { background: rgba(88, 166, 255, 0.2); color: var(--accent-primary); border: 1px solid var(--accent-primary); }
+    .badge-low { background: rgba(63, 185, 80, 0.2); color: var(--accent-success); border: 1px solid var(--accent-success); }
+    
+    .block-container { padding-top: 1.5rem; }
     hr { border-color: var(--border-color) !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. ENTERPRISE BACKEND (DYNAMIC CORE)
+# 3. BACKEND (DYNAMIC SIMULATION)
 # -----------------------------------------------------------------------------
-
 class EnterpriseBackend:
-    """
-    Simulates a live connection to an enterprise data lake.
-    Uses SessionState to maintain continuity across reruns.
-    """
-    
     @staticmethod
     def get_system_time():
-        """Returns microsecond-precise UTC time for logs."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S GMT")
 
     @staticmethod
     def get_global_metrics():
-        """
-        Simulates live fluctuation in risk metrics using a Random Walk.
-        Updates session state to persist the 'live' feel.
-        """
-        # Retrieve current state
+        # Dynamic Simulation
         current_risk = st.session_state['system_state']['risk_index']
-        
-        # Simulation: Random drift between -0.5 and +0.8
         drift = np.random.uniform(-0.5, 0.8)
         new_risk = max(0, min(100, current_risk + drift))
         
-        # Update state
         st.session_state['system_state']['risk_index'] = new_risk
-        
-        # Update history for charts
         st.session_state['system_state']['risk_history'].append(new_risk)
         if len(st.session_state['system_state']['risk_history']) > 24:
             st.session_state['system_state']['risk_history'].pop(0)
@@ -157,18 +127,15 @@ class EnterpriseBackend:
             "risk_index": f"{new_risk:.2f}",
             "risk_delta": f"{drift:+.2f}%",
             "critical_events": st.session_state['system_state']['active_alerts'],
-            "escalating": 8, # Static for now, could be dynamic
+            "escalating": 8,
             "stable_pct": 84,
             "last_refresh": EnterpriseBackend.get_system_time(),
             "user_role": "COMMANDER / TIER-1",
-            "latency": f"{np.random.randint(20, 55)}ms"
+            "latency": f"{np.random.randint(18, 42)}ms"
         }
 
     @staticmethod
     def get_map_assets():
-        """
-        Returns geospatial data. In a real app, this queries a GIS database.
-        """
         return [
             {"name": "Strait of Malacca", "lat": 4.2105, "lon": 101.9758, "type": "Chokepoint", "risk": "CRITICAL", "conf": 98},
             {"name": "Taiwan Strait", "lat": 23.9037, "lon": 119.6763, "type": "Chokepoint", "risk": "HIGH", "conf": 92},
@@ -180,7 +147,6 @@ class EnterpriseBackend:
 
     @staticmethod
     def get_intelligence_feed():
-        """Returns the intelligence incidents."""
         return [
             {"id": "EVT-884", "headline": "Naval Blockade Exercise Initiated", "asset": "Taiwan Strait", "category": "Conflict", "severity": "CRITICAL", "confidence": 98, "timestamp": "14m ago", "source": "SIGINT / SAT", "why": "Troop movement detected via SAR imagery."},
             {"id": "EVT-883", "headline": "Severe Cyclone Formation", "asset": "Bay of Bengal", "category": "Weather", "severity": "HIGH", "confidence": 94, "timestamp": "42m ago", "source": "NOAA / MET", "why": "Pressure drop > 20hPa."},
@@ -189,28 +155,18 @@ class EnterpriseBackend:
 
     @staticmethod
     def get_analytics_data():
-        """
-        Returns dynamic analytics data based on the session state history.
-        """
         history = st.session_state['system_state']['risk_history']
-        
-        # Create timestamps for the history
-        now = datetime.now()
-        times = [now - timedelta(hours=i) for i in range(len(history))][::-1]
-        
-        velocity = pd.DataFrame({
-            'time': times,
-            'risk_score': history
-        })
+        times = [datetime.now() - timedelta(hours=i) for i in range(len(history))][::-1]
+        velocity = pd.DataFrame({'time': times, 'risk_score': history})
         root_causes = pd.DataFrame({'cause': ['Geopolitical', 'Climate', 'Cyber', 'Labor'], 'count': [40, 25, 20, 15]})
         return velocity, root_causes
 
     @staticmethod
     def get_logs():
         return pd.DataFrame([
-            {"Timestamp": "10:42:01 UTC", "User": "ADMIN_01", "Action": "SIMULATION_RUN", "Target": "Taiwan_Semi"},
-            {"Timestamp": "10:38:15 UTC", "User": "AUTO_BOT", "Action": "ALERT_TRIGGER", "Target": "Strait_Malacca"},
-            {"Timestamp": "10:35:22 UTC", "User": "SYS_CORE", "Action": "DATA_SYNC", "Target": "Global_Node"},
+            {"Timestamp": "10:42:01", "User": "ADMIN_01", "Action": "SIMULATION_RUN", "Target": "Taiwan_Semi"},
+            {"Timestamp": "10:38:15", "User": "AUTO_BOT", "Action": "ALERT_TRIGGER", "Target": "Strait_Malacca"},
+            {"Timestamp": "10:35:22", "User": "SYS_CORE", "Action": "DATA_SYNC", "Target": "Global_Node"},
         ])
 
     @staticmethod
@@ -249,164 +205,127 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 3. UI COMPONENTS (UPDATED FOR ENTERPRISE LOOK)
+# 4. RENDER FUNCTIONS (HUD + MAP + UI)
 # -----------------------------------------------------------------------------
 
-def render_metric_card(label, value, delta=None, border_color="var(--accent-primary)"):
-    delta_html = f"<div style='color:{border_color}; font-size:0.85rem; margin-top:4px;'>{delta}</div>" if delta else ""
+def render_enterprise_header():
+    """Renders the Phase 2 Professional HUD Header."""
+    metrics = EnterpriseBackend.get_global_metrics()
+    
     st.markdown(f"""
-    <div class="metric-card" style="border-left-color: {border_color};">
-        <div class="metric-value">{value}</div>
-        <div class="metric-label">{label}</div>
-        {delta_html}
+    <div class="hud-container">
+        <div class="hud-title-section">
+            <div class="hud-logo">🛡️</div>
+            <div class="hud-text-group">
+                <div class="hud-main-title">AVELLON | OS</div>
+                <div class="hud-subtitle">
+                    <span class="status-dot"></span>
+                    LIVE FEED • {metrics['last_refresh']}
+                </div>
+            </div>
+        </div>
+        
+        <div class="hud-metrics">
+            <div class="hud-metric-box">
+                <div class="hud-metric-label">Global Risk Index</div>
+                <div class="hud-metric-value" style="color: {'var(--accent-danger)' if float(metrics['risk_index']) > 70 else 'var(--accent-primary)'}">
+                    {metrics['risk_index']} <span style="font-size:14px; color:var(--text-secondary)">{metrics['risk_delta']}</span>
+                </div>
+            </div>
+            <div class="hud-metric-box">
+                <div class="hud-metric-label">Active Alerts</div>
+                <div class="hud-metric-value" style="color: var(--accent-warning)">{metrics['critical_events']}</div>
+            </div>
+            <div class="hud-metric-box">
+                <div class="hud-metric-label">System Latency</div>
+                <div class="hud-metric-value" style="color: var(--accent-success)">{metrics['latency']}</div>
+            </div>
+            <div class="hud-metric-box">
+                <div class="hud-metric-label">Role</div>
+                <div class="hud-metric-value" style="font-size: 16px; color: var(--text-primary); margin-top:8px;">{metrics['user_role']}</div>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-def render_header():
-    # Fetch Dynamic Data
-    m = EnterpriseBackend.get_global_metrics()
-    
-    cols = st.columns([1,1,1,1,1.5,1.2])
-    
-    with cols[0]:
-        render_metric_card("RISK INDEX", m['risk_index'], m['risk_delta'], "var(--accent-danger)")
-    with cols[1]:
-        render_metric_card("CRITICAL", m['critical_events'], "Active Alerts", "var(--accent-danger)")
-    with cols[2]:
-        render_metric_card("ESCALATING", m['escalating'], "Assets", "var(--accent-warning)")
-    with cols[3]:
-        render_metric_card("STABLE", f"{m['stable_pct']}%", None, "var(--accent-success)")
-    
-    with cols[4]:
-        st.markdown(f"""
-        <div class="css-card" style="text-align:center; padding:0.8rem;">
-            <div style="color:var(--text-secondary); font-size:0.7rem; letter-spacing:1px; font-family:var(--font-mono);">LIVE TIME (GMT)</div>
-            <div style="color:var(--accent-primary); font-size:1.2rem; font-weight:bold; font-family:var(--font-mono);">{m['last_refresh']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with cols[5]:
-         st.markdown(f"""
-        <div class="css-card" style="text-align:center; padding:0.8rem;">
-            <div style="color:var(--text-secondary); font-size:0.7rem; letter-spacing:1px; font-family:var(--font-mono);">USER ROLE</div>
-            <div style="color:var(--accent-success); font-size:1.1rem; font-weight:bold;">{m['user_role']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
 def render_sidebar():
     with st.sidebar:
-        st.title("🛡️ AVELLON")
-        st.caption(f"Command Control • {EnterpriseBackend.get_system_time()}")
+        st.caption(f"COMMAND TOOLS")
         st.markdown("---")
-        
-        st.subheader("OPERATING MODE")
-        st.radio("Select Mode", ["🔴 LIVE MONITORING", "🔍 DEEP SCAN", "🔮 PREDICTIVE", "🎲 SIMULATION"], label_visibility="collapsed")
+        st.radio("MODE", ["LIVE MONITORING", "DEEP SCAN", "SIMULATION"], label_visibility="collapsed")
         
         st.markdown("### FILTERS")
-        st.multiselect("Threat Level", ["CRITICAL", "HIGH", "MEDIUM", "LOW"], default=["CRITICAL", "HIGH"])
+        st.multiselect("THREAT LEVEL", ["CRITICAL", "HIGH", "MEDIUM", "LOW"], default=["CRITICAL", "HIGH"])
         
         st.markdown("---")
-        # Fetch latency dynamically
-        metrics = EnterpriseBackend.get_global_metrics()
-        st.info(f"System Status: **ONLINE**\nSatellites: **CONNECTED**\nLatency: **{metrics['latency']}**")
+        st.checkbox("Show Weather Layers", value=True)
+        st.checkbox("Show Naval Assets", value=False)
+        st.markdown("---")
+        st.info("System Status: **ONLINE**")
 
 def render_map_section():
-    st.markdown("### 🗺️ WAR ROOM – Live Theater (NASA GIBS Overlay)")
-    assets = EnterpriseBackend.get_map_assets()
-    
-    # Base Map
+    st.markdown("### 🗺️ GLOBAL THEATER OVERVIEW")
     m = folium.Map(location=[20, 80], zoom_start=2, tiles=None)
-    folium.TileLayer('CartoDB dark_matter', name="Tactical Dark").add_to(m)
-
-    # NASA GIBS Layer (Live Satellite Imagery)
+    folium.TileLayer('CartoDB dark_matter', name="Dark").add_to(m)
+    
+    # NASA GIBS
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     folium.TileLayer(
         tiles=f'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/{today}/GoogleMapsCompatible_Level9/{{z}}/{{y}}/{{x}}.jpg',
-        attr='NASA GIBS',
-        name='NASA Satellite (Live)',
-        overlay=True,
-        opacity=0.6
+        attr='NASA GIBS', overlay=True, opacity=0.5
     ).add_to(m)
 
-    # Plot Assets with Enterprise Colors
-    risk_colors = {"CRITICAL": "#f85149", "HIGH": "#d29922", "MEDIUM": "#58a6ff", "LOW": "#3fb950"}
-    
-    for asset in assets:
-        c = risk_colors.get(asset["risk"], "grey")
-        # Tooltip HTML
-        tooltip_html = f"""
-            <div style='font-family: sans-serif; padding: 5px;'>
-                <b>{asset['name']}</b><br>
-                <span style='color:{c}'>● {asset['risk']}</span><br>
-                <span style='font-size:10px; color:#666'>{asset['type']}</span>
-            </div>
+    for a in EnterpriseBackend.get_map_assets():
+        c = {"CRITICAL": "#f85149", "HIGH": "#d29922", "MEDIUM": "#58a6ff", "LOW": "#3fb950"}.get(a['risk'])
+        
+        # HTML Tooltip
+        tooltip = f"""
+        <div style='font-family:sans-serif; padding:5px;'>
+            <b>{a['name']}</b><br>
+            <span style='color:{c}'>● {a['risk']}</span><br>
+            <span style='font-size:10px; color:#666'>{a['type']}</span>
+        </div>
         """
         
-        folium.CircleMarker(
-            location=[asset["lat"], asset["lon"]],
-            radius=9 if asset["risk"] == "CRITICAL" else 6,
-            popup=tooltip_html,
-            tooltip=asset['name'],
-            color=c, fill=True, fill_color=c, fill_opacity=0.9
-        ).add_to(m)
-        
-        if asset["risk"] == "CRITICAL":
-            folium.Circle(
-                location=[asset["lat"], asset["lon"]], 
-                radius=500000, 
-                color=c, 
-                weight=1, 
-                fill=True, 
-                fill_opacity=0.15
-            ).add_to(m)
-
-    folium.LayerControl().add_to(m)
-    st_folium(m, height=450, use_container_width=True)
+        folium.CircleMarker([a['lat'], a['lon']], radius=6, color=c, fill=True, fill_opacity=0.9, popup=tooltip, tooltip=a['name']).add_to(m)
+        if a['risk'] == "CRITICAL":
+            folium.Circle([a['lat'], a['lon']], radius=500000, color=c, weight=1, fill=True, fill_opacity=0.1).add_to(m)
+            
+    st_folium(m, height=420, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# 4. MAIN ORCHESTRATION
+# 5. MAIN EXECUTION
 # -----------------------------------------------------------------------------
 def main():
-    render_header()
+    # 1. Render Professional HUD Header
+    render_enterprise_header()
     render_sidebar()
     
-    st.markdown("---")
-    
-    # Split layout: Map (Left 65%) | Intelligence Feed (Right 35%)
+    # Layout
     c_map, c_feed = st.columns([2, 1])
     
     with c_map:
         render_map_section()
-        
-        # Tabs below Map
         st.markdown("<br>", unsafe_allow_html=True)
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 ANALYTICS", "💬 AI FUSION ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION"])
         
-        with tab1:
+        # ANALYTICS TABS (Restored all tabs)
+        t1, t2, t3, t4 = st.tabs(["📊 ANALYTICS", "💬 AI ANALYST", "🕸️ DIGITAL TWIN", "🎲 SIMULATION"])
+        
+        with t1:
             vel_df, cause_df = EnterpriseBackend.get_analytics_data()
-            cc1, cc2 = st.columns(2)
-            with cc1:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.markdown("**Risk Velocity (Live Feed)**")
-                st.altair_chart(
-                    alt.Chart(vel_df).mark_area(
-                        line={'color':'#58a6ff'},
-                        color=alt.Gradient(
-                            gradient='linear',
-                            stops=[alt.GradientStop(color='#58a6ff', offset=0),
-                                   alt.GradientStop(color='rgba(88, 166, 255, 0)', offset=1)],
-                            x1=1, x2=1, y1=1, y2=0
-                        )
-                    ).encode(x='time', y='risk_score').properties(height=220), 
-                    use_container_width=True
-                )
-            with cc2:
+                st.altair_chart(alt.Chart(vel_df).mark_area(
+                    line={'color':'#58a6ff'},
+                    color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#58a6ff', offset=0), alt.GradientStop(color='rgba(88,166,255,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
+                ).encode(x='time', y='risk_score').properties(height=220), use_container_width=True)
+            with c2:
                 st.markdown("**Root Cause Analysis**")
                 st.altair_chart(alt.Chart(cause_df).mark_arc(innerRadius=50).encode(theta='count', color='cause').properties(height=220), use_container_width=True)
-
-        with tab2:
+                
+        with t2:
             st.markdown("#### 💬 AI FUSION ANALYST (Multi-INT)")
-            st.caption("Fusing Satellite, Dark Web, and ERP data layers.")
-            
             # Chat Interface
             cnt = st.container(height=300)
             with cnt:
@@ -417,25 +336,25 @@ def main():
             if q:
                 st.session_state['chat_history'].append({"role": "user", "content": q})
                 with st.spinner("Processing intelligence streams..."):
-                    time.sleep(0.8) # Simulation delay
+                    time.sleep(0.8) 
                     resp = EnterpriseBackend.ai_chat_response(q)
                     st.session_state['chat_history'].append({"role": "assistant", "content": resp})
                 st.rerun()
 
-        with tab3:
+        with t3:
             st.markdown("#### SUPPLY CHAIN DIGITAL TWIN")
-            
+            # 
             g = graphviz.Digraph()
             g.attr(rankdir='LR', bgcolor='transparent')
             g.attr('node', shape='box', style='filled', color='white', fontname='Sans-Serif')
-            g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c', fontcolor='white') # Critical
-            g.node('B', 'Assembly Node', fillcolor='#3a2e1c', fontcolor='white') # Warning
-            g.node('C', 'Global Logistics', fillcolor='#1c3a2e', fontcolor='white') # Safe
+            g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c', fontcolor='white') 
+            g.node('B', 'Assembly Node', fillcolor='#3a2e1c', fontcolor='white') 
+            g.node('C', 'Global Logistics', fillcolor='#1c3a2e', fontcolor='white')
             g.node('D', 'End Market', fillcolor='#1c2e4a', fontcolor='white')
             g.edge('A', 'B'); g.edge('B', 'C'); g.edge('C', 'D')
             st.graphviz_chart(g, use_container_width=True)
 
-        with tab4:
+        with t4:
             st.markdown("#### SCENARIO SIMULATOR")
             d = st.slider("Disruption Duration (Days)", 1, 60, 7)
             impact = d * 12.5
@@ -443,32 +362,23 @@ def main():
             st.progress(min(100, d*2))
             
     with c_feed:
-        st.subheader("📡 INTELLIGENCE STREAM")
+        st.subheader("📡 INTEL FEED")
         
         # PDF Button
         pdf_bytes = EnterpriseBackend.generate_pdf_brief()
         st.download_button("📄 Download Brief (PDF)", data=pdf_bytes, file_name="Avellon_Brief.pdf", mime="application/pdf", use_container_width=True)
-        
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Feed Items
-        feed = EnterpriseBackend.get_intelligence_feed()
-        for item in feed:
-            badge_class = f"badge badge-{item['severity'].lower()}"
-            with st.expander(f"{item['headline']}"):
-                st.markdown(f"<span class='{badge_class}'>{item['severity']}</span> &nbsp; <span style='color:#888; font-size:0.8rem'>{item['timestamp']}</span>", unsafe_allow_html=True)
-                st.caption(f"Source: {item['source']}")
-                st.write(f"**Analysis:** {item['why']}")
-                if st.button("ACTIVATE PROTOCOL", key=item['id']):
-                    st.toast(f"Protocol initiated for {item['id']}", icon="⚡")
+
+        for i in EnterpriseBackend.get_intelligence_feed():
+            b_cls = f"badge badge-{i['severity'].lower()}"
+            with st.expander(f"{i['headline']}"):
+                st.markdown(f"<span class='{b_cls}'>{i['severity']}</span> {i['timestamp']}", unsafe_allow_html=True)
+                st.caption(f"Source: {i['source']}")
+                st.write(i['why'])
         
         st.markdown("---")
         st.markdown("**SYSTEM LOGS**")
-        st.dataframe(
-            EnterpriseBackend.get_logs(), 
-            use_container_width=True, 
-            hide_index=True
-        )
+        st.dataframe(EnterpriseBackend.get_logs(), use_container_width=True, hide_index=True)
 
     # Footer
     st.markdown("---")
