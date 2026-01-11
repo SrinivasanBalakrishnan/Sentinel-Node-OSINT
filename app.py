@@ -205,15 +205,14 @@ class EnterpriseBackend:
             return f"[{t}] **SYSTEM:** Query processed. Integrating Satellite, News, and ERP feeds... No critical anomalies found for this vector. Please specify a target asset."
 
 # -----------------------------------------------------------------------------
-# 4. RENDER FUNCTIONS (FIXED INDENTATION FOR HUD)
+# 4. RENDER FUNCTIONS (FIXED HUD INDENTATION)
 # -----------------------------------------------------------------------------
 
 def render_enterprise_header():
     """Renders the Phase 2 Professional HUD Header."""
     metrics = EnterpriseBackend.get_global_metrics()
     
-    # NOTE: The indentation inside this f-string has been removed 
-    # to prevent Markdown from interpreting it as a code block.
+    # We use dedented HTML to prevent Markdown code-block interpretation
     st.markdown(f"""
 <div class="hud-container">
 <div class="hud-title-section">
@@ -344,7 +343,8 @@ def main():
 
         with t3:
             st.markdown("#### SUPPLY CHAIN DIGITAL TWIN")
-            #             g = graphviz.Digraph()
+            # --- FIX: Ensure 'g' is defined ---
+            g = graphviz.Digraph()
             g.attr(rankdir='LR', bgcolor='transparent')
             g.attr('node', shape='box', style='filled', color='white', fontname='Sans-Serif')
             g.node('A', 'Taiwan Semi', fillcolor='#4a1c1c', fontcolor='white') 
